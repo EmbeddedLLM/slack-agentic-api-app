@@ -67,4 +67,6 @@ PDF generation also requires working Chromium and its OS libraries. Verify that 
 
 ## State and exposure
 
+For temporary gateway storage, set `AGENTIC_API_HOME=/tmp/slack-agentic-api` and `TMPDIR=/tmp/slack-agentic-api/tmp` in `.env.gateway`, using directories owned by the gateway user with mode `0700`. Use a free `GATEWAY_PORT` and match it in the bot's `AGENTIC_WS_URL`. State under `/tmp` may be removed on reboot or by cleanup; use persistent storage when conversation and knowledge retention matters.
+
 Keep `data/` and the gateway's database/files directory on persistent storage. Run one Slack bridge instance per installation: queues and pending plans are local to one process. If the gateway is on a different machine, use `wss://` and its configured bearer authentication; Socket Mode still needs no public endpoint for the bot.

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Self-hosted Slack assistant using Agentic API over WebSocket: access control, files, thread memory, and resumable research.",
   "type": "module",
+  "main": "index.js",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -42,6 +43,7 @@
     "officeparser": "8.8.0"
   },
   "devDependencies": {
+    "@slack/cli-hooks": "^2.0.0",
     "omggif": "^1.0.10",
     "vitepress": "1.6.4"
   },
