@@ -1,0 +1,10 @@
+Generated using the built-in image_gen tool for the Meow-AI Slack app.
+
+Use case: stylized-concept
+Asset type: square Slack app avatar for Meow-AI.
+Primary request: a very cute fluffy black ragdoll cat with luminous golden-yellow eyes.
+Subject: one adorable black long-haired ragdoll kitten, round soft face, luxurious fluffy cheek ruff, small rounded ears with tufts, tiny charcoal nose, gentle curious expression, large vivid yellow irises and natural dark pupils. All fur is black with soft charcoal highlights that reveal the fluffy texture.
+Style/medium: polished soft 3D character illustration with tactile plush fur, appealing and clean enough to read at small icon sizes.
+Composition: square 1:1 image, centered close-up head and upper chest, facing the viewer, generous safe padding around ears for Slack's rounded crops. Cat fills most of image. Simple uncluttered softly lit background contrasting with the black fur.
+Lighting/mood: soft studio light, warm, friendly, expressive eyes.
+Constraints: yellow eyes, black fluffy coat, single cat, no text, no letters, no logo, no watermark, no extra objects.

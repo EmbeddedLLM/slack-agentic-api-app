@@ -137,46 +137,59 @@ export class AgenticClient {
   async respond({ functionHandlers = {}, ...options } = {}) {
     const allowedFunctions = (options.tools || []).filter(tool => tool.type === 'function' && Object.hasOwn(functionHandlers, tool.name)).map(tool => tool.name);
     const results = new Map();
+    const execute = async (call, signal = options.signal) => {
+      if (call.type !== 'function_call' || !allowedFunctions.includes(call.name) || !call.call_id || call.namespace) {
+        throw new AgenticError('The gateway requested an unsupported client tool.');
+      }
+      if (signal?.aborted) throw signal.reason;
+      if (!results.has(call.call_id)) {
+        const result = await functionHandlers[call.name](call.arguments, { signal });
+        results.set(call.call_id, JSON.stringify(result));
+      }
+      return { type: 'function_call_output', call_id: call.call_id, output: results.get(call.call_id) };
+    };
     let request = options;
     for (let round = 0; round < 5; round++) {
-      const response = await this.respondOnce({ ...request, allowedFunctions });
-      const calls = response.output.filter(item => item.type === 'function_call');
-      if (!calls.length) return response;
+      const response = await this.respondOnce({ ...request, allowedFunctions, liveExecute: options.multiAgent ? execute : null });
+      const calls = response.output.filter(item => item.type === 'function_call' && !results.has(item.call_id));
+      if (!calls.length) {
+        if (!outputText(response).trim()) throw new AgenticError('The model returned no answer after its local tools completed.');
+        return response;
+      }
+      if (options.multiAgent) throw new AgenticError('The multi-agent response ended with an unresolved client tool.');
       if (round === 4 || calls.length > 3) throw new AgenticError('The local tool limit was reached. Ask for fewer outputs.');
       const outputs = [];
       for (const call of calls) {
-        if (options.signal?.aborted) throw options.signal.reason;
-        if (!results.has(call.call_id)) {
-          const result = await functionHandlers[call.name](call.arguments, { signal: options.signal });
-          results.set(call.call_id, JSON.stringify(result));
-        }
-        outputs.push({ type: 'function_call_output', call_id: call.call_id, output: results.get(call.call_id) });
+        outputs.push(await execute(call));
       }
       if (options.signal?.aborted) throw options.signal.reason;
-      // Stored continuations reference the pending response; stateless mode replays
-      // the unchanged public transcript, including multi-agent ownership metadata.
-      const previousInput = typeof request.input === 'string' ? [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: request.input }] }] : request.input;
-      request = options.store === false
-        ? { ...options, input: [...previousInput, ...response.output, ...outputs] }
-        : { ...options, input: outputs, previousResponseId: response.id };
+      // Like the playground, use the retained parent on the same WebSocket even
+      // with store:false. An unstored parent cannot survive a reconnect.
+      request = { ...options, input: outputs, previousResponseId: response.id };
     }
   }
 
-  async respondOnce({ input, tools = [], previousResponseId, store = true, signal, onEvent, maxToolCalls = 12, instructions, multiAgent = null, allowedFunctions = [] } = {}) {
+  async respondOnce({ input, tools = [], previousResponseId, store = true, signal, onEvent, maxToolCalls = 12, instructions, multiAgent = null, allowedFunctions = [], liveExecute = null } = {}) {
     if (this.busy) throw new AgenticError('This job already has an active response.');
     if (signal?.aborted) throw signal.reason || new DOMException('Cancelled', 'AbortError');
     if (multiAgent && (!multiAgent.enabled || !Number.isSafeInteger(multiAgent.max_concurrent_subagents) || multiAgent.max_concurrent_subagents < 1)) {
       throw new AgenticError('Multi-agent mode requires a positive max_concurrent_subagents.');
     }
+    if (multiAgent && !store) throw new AgenticError('Multi-agent execution requires stored responses. Enable thread memory before using multi-agent mode.');
+    if (!store && previousResponseId && this.socket?.readyState !== WebSocket.OPEN) {
+      throw new AgenticError('The WebSocket holding the unstored response is no longer available. Start a new request.');
+    }
     const streamId = randomUUID();
     const include = [];
-    if (tools.some(tool => tool.type === 'web_search')) include.push('web_search_call.action.sources');
+    // URL citations arrive on output_text without the optional search-source
+    // expansion, which some vLLM Responses servers reject when forwarded.
     if (tools.some(tool => tool.type === 'file_search')) include.push('file_search_call.results');
     const frame = JSON.stringify({
       type: 'response.create', stream_id: streamId, model: this.model, input,
       tools, store, stream: true, max_output_tokens: this.maxOutputTokens,
       // The gateway rejects max_tool_calls on multi-agent requests.
-      ...(multiAgent ? { multi_agent: multiAgent } : { max_tool_calls: maxToolCalls }),
+      multi_agent: multiAgent || { enabled: false }, parallel_tool_calls: true,
+      ...(!multiAgent ? { max_tool_calls: maxToolCalls } : {}),
       ...(include.length ? { include } : {}),
       ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
       ...(instructions ? { instructions } : {}),
@@ -200,9 +213,14 @@ export class AgenticClient {
       const socket = this.socket;
       return await new Promise((resolve, reject) => {
         let settled = false;
+        let responseId = null;
+        const liveCalls = new Set();
+        const pendingCalls = new Set();
+        const liveController = new AbortController();
         const finish = (error, value) => {
           if (settled) return;
           settled = true;
+          liveController.abort(error || new AgenticError('The response ended.'));
           steering.reject(error || new AgenticError('The response ended before the steering update was applied.'));
           clearTimeout(timer);
           signal?.removeEventListener('abort', abort);
@@ -221,6 +239,23 @@ export class AgenticClient {
             const deferred = steering.event(event);
             onEvent?.(event);
             if (deferred) event = deferred;
+            if (event.type === 'response.created') responseId = event.response?.id;
+            if (event.type === 'response.inject.failed') throw new AgenticError('The gateway rejected a client-tool result.', 'injection_failed');
+            if (liveExecute && event.type === 'response.output_item.done' && ['function_call', 'custom_tool_call', 'tool_search_call'].includes(event.item?.type)) {
+              const call = event.item;
+              if (!responseId || !call.call_id || liveCalls.has(call.call_id)) throw new AgenticError('Invalid or repeated live client call.');
+              if (liveCalls.size >= 5) throw new AgenticError('The local tool limit was reached. Ask for fewer outputs.');
+              liveCalls.add(call.call_id);
+              pendingCalls.add(call.call_id);
+              const targetResponse = responseId;
+              liveExecute(call, liveController.signal).then(output => {
+                if (settled) return;
+                pendingCalls.delete(call.call_id);
+                socket.send(JSON.stringify({ type: 'response.inject', response_id: targetResponse, input: [output] }), error => {
+                  if (error) finish(new AgenticError('Could not send the client-tool result.'));
+                });
+              }).catch(error => finish(error instanceof AgenticError ? error : new AgenticError('Local tool execution failed.')));
+            }
             if (event.type === 'error') {
               const code = typeof event.error?.code === 'string' ? event.error.code : '';
               const missing = code === 'previous_response_not_found';
@@ -235,7 +270,10 @@ export class AgenticClient {
             if (['response.failed', 'response.incomplete'].includes(event.type)) {
               throw new AgenticError('The model response did not finish. Try a smaller request or raise the output limit.', event.type);
             }
-            if (event.type === 'response.completed') finish(null, validateResponse(event.response, allowedFunctions));
+            if (event.type === 'response.completed') {
+              if (pendingCalls.size) throw new AgenticError('The response ended while client tools were still executing.');
+              finish(null, validateResponse(event.response, allowedFunctions));
+            }
           } catch (error) {
             finish(error instanceof AgenticError ? error : new AgenticError('Invalid event received from the gateway.'));
           }

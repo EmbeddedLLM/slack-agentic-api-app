@@ -37,6 +37,14 @@ The wrapper reads `.env.gateway`, removes any `SLACK_*` environment variables fr
 
 Only one process can bind port 9000. Keep your existing gateway running during testing by setting a different `GATEWAY_PORT`; point the bot's `AGENTIC_WS_URL` at that port.
 
+### Change the model or its port
+
+Slack authentication does not depend on your model server. Change `LLM_API_BASE` in `.env.gateway` to the new model-server address, and change `AGENTIC_MODEL` in the app's `.env` to the exact served model name. Stop and restart the gateway with `npm run gateway:start`, then restart the bot with your existing `slack run --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID` command. No new Slack login or app creation is needed.
+
+`AGENTIC_WS_URL` still points to Agentic API, not the model server. Change it only when moving the gateway itself. For example: Slack app → `ws://127.0.0.1:9001/v1/responses` → gateway → model server at `http://127.0.0.1:5050`.
+
+The client follows the upstream [playground](https://github.com/vllm-project/agentic-api/tree/main/application_examples/agentic_playground): `response.create` for requests, `previous_response_id` for standard function continuations on the same socket, and live `response.inject` results for multi-agent function calls. Multi-agent mode requires stored responses. File search can request `file_search_call.results`; web citations do not require the optional `web_search_call.action.sources` expansion, which some upstream vLLM servers reject.
+
 ## Use your existing launch script
 
 A script like `gateway-run.sh` can continue to launch the gateway. Point it at the new binary and supply these variables in the gateway environment:
@@ -44,10 +52,13 @@ A script like `gateway-run.sh` can continue to launch the gateway. Point it at t
 ```bash
 export AGENTIC_WEB_SEARCH_PROVIDER=you
 export YOU_API_KEY='your-key'
+export YOU_API_BASE_URL=https://ydc-index.io
 export AGENTIC_CODE_INTERPRETER_ENABLED=true
 ```
 
 Retain the existing `AGENTIC_API_HOME` if you need to continue its sessions and knowledge stores. The app wrapper deliberately uses separate state by default. Keep one `RUST_LOG` assignment: a later assignment replaces an earlier one.
+
+You.com requires both the key and an explicit base URL: Agentic API does not supply a default endpoint for this provider. The example uses the endpoint in [You.com's Search API reference](https://you.com/docs/api-reference/search/v1-search).
 
 ## Interpreter requirements
 

@@ -23,7 +23,7 @@ test('native WebSocket frames, bearer upgrade, continuation and connection reuse
   assert.equal(gateway.requests[0].type, 'response.create');
   assert.equal(gateway.requests[0].store, true);
   assert.equal(gateway.requests[0].stream, true);
-  assert.deepEqual(gateway.requests[0].include, ['web_search_call.action.sources']);
+  assert.ok(!Object.hasOwn(gateway.requests[0], 'include'), 'web search must work with vLLM servers that reject optional source expansion');
   assert.equal(gateway.requests[1].previous_response_id, first.id);
   assert.notEqual(gateway.requests[0].stream_id, gateway.requests[1].stream_id);
 });
@@ -128,7 +128,7 @@ test('file search uses only configured stores and renders filename citations', a
   const { client, gateway } = await fixture(t, ({ complete }) => complete('', answer));
   assert.match(outputText(await client.respond({ input: 'leave policy', tools })), /Five days \(handbook.md\)/);
   assert.deepEqual(gateway.requests[0].tools[1].vector_store_ids, ['vs_handbook']);
-  assert.deepEqual(gateway.requests[0].include, ['web_search_call.action.sources', 'file_search_call.results']);
+  assert.deepEqual(gateway.requests[0].include, ['file_search_call.results']);
   assert.throws(() => gatewayTools('file_search'), /vectorStoreIds/);
 });
 
@@ -230,19 +230,69 @@ for (const store of [true, false]) {
     const { client, gateway } = await fixture(t, ({ index, complete }) => index === 0 ? complete('', { output: [call] }) : complete('Here is your sticker.'));
     let executions = 0;
     const tools = [{ type: 'function', name: 'create_sticker', parameters: { type: 'object' } }];
-    const result = await client.respond({ input: 'Draw a cat.', tools, store, multiAgent: { enabled: true, max_concurrent_subagents: 2 }, functionHandlers: {
+    const result = await client.respond({ input: 'Draw a cat.', tools, store, functionHandlers: {
       create_sticker: async raw => { executions++; assert.equal(JSON.parse(raw).filename, 'cat.gif'); return { ok: true, filename: 'cat.gif' }; },
     } });
     assert.equal(outputText(result), 'Here is your sticker.');
     assert.equal(executions, 1);
     assert.deepEqual(gateway.requests[1].tools, tools);
-    assert.equal(gateway.requests[1].multi_agent.enabled, true);
+    assert.equal(gateway.requests[1].multi_agent.enabled, false);
     assert.equal(gateway.requests[1].input.at(-1).type, 'function_call_output');
     assert.equal(gateway.requests[1].input.at(-1).call_id, 'call_sticker');
-    if (store) assert.equal(gateway.requests[1].previous_response_id, 'resp_1');
-    else { assert.equal(gateway.requests[1].previous_response_id, undefined); assert.deepEqual(gateway.requests[1].input[1], call); }
+    assert.equal(gateway.requests[1].previous_response_id, 'resp_1');
+    assert.equal(gateway.requests[1].input.length, 1);
+    assert.equal(gateway.connections.length, 1);
   });
 }
+
+test('multi-agent client tools inject results before the response completes, like the playground', async t => {
+  const call = { type: 'function_call', name: 'create_sticker', call_id: 'child_call', arguments: '{}' };
+  const { client, gateway } = await fixture(t, ({ request, send, complete }) => {
+    if (request.type === 'response.create') {
+      send({ type: 'response.created', response: { id: 'live_parent' } });
+      send({ type: 'response.output_item.done', item: call, agent: { agent_name: '/root/artist' } });
+    } else {
+      assert.equal(request.type, 'response.inject');
+      assert.equal(request.response_id, 'live_parent');
+      assert.deepEqual(request.input, [{ type: 'function_call_output', call_id: 'child_call', output: '{"ok":true}' }]);
+      complete('Sticker ready.', { output: [call, ...response('Sticker ready.').output] });
+    }
+  });
+  let executions = 0;
+  const result = await client.respond({ input: 'Make a sticker.', tools: [{ type: 'function', name: 'create_sticker' }], multiAgent: { enabled: true, max_concurrent_subagents: 2 }, functionHandlers: { create_sticker: async () => { executions++; return { ok: true }; } } });
+  assert.equal(outputText(result), 'Sticker ready.');
+  assert.equal(executions, 1);
+  assert.equal(gateway.requests.length, 2);
+});
+
+test('live client tool injection failure is surfaced without replay', async t => {
+  const { client, gateway } = await fixture(t, ({ request, send }) => {
+    if (request.type === 'response.create') {
+      send({ type: 'response.created', response: { id: 'live_parent' } });
+      send({ type: 'response.output_item.done', item: { type: 'function_call', name: 'create_sticker', call_id: 'c', arguments: '{}' } });
+    } else send({ type: 'response.inject.failed', error: { message: 'private diagnostic' } });
+  });
+  await assert.rejects(client.respond({ input: 'x', tools: [{ type: 'function', name: 'create_sticker' }], multiAgent: { enabled: true, max_concurrent_subagents: 1 }, functionHandlers: { create_sticker: async () => ({ ok: true }) } }), /rejected a client-tool result/);
+  assert.equal(gateway.requests.length, 2);
+});
+
+test('undeclared live tools are never executed or injected', async t => {
+  const { client, gateway } = await fixture(t, ({ send }) => {
+    send({ type: 'response.created', response: { id: 'live_parent' } });
+    send({ type: 'response.output_item.done', item: { type: 'function_call', name: 'create_sticker', call_id: 'c', arguments: '{}' } });
+  });
+  let executed = false;
+  await assert.rejects(client.respond({ input: 'x', multiAgent: { enabled: true, max_concurrent_subagents: 1 }, functionHandlers: { create_sticker: () => { executed = true; } } }), /unsupported client tool/);
+  assert.equal(executed, false);
+  assert.equal(gateway.requests.length, 1);
+});
+
+test('unstored multi-agent requests and lost unstored continuations fail locally', async () => {
+  const client = new AgenticClient({ url: 'ws://localhost:1/v1/responses', model: 'model' });
+  await assert.rejects(client.respond({ input: 'x', store: false, multiAgent: { enabled: true, max_concurrent_subagents: 1 } }), /requires stored responses/);
+  await assert.rejects(client.respond({ input: 'x', store: false, previousResponseId: 'lost' }), /unstored response/);
+  assert.equal(client.socket, null);
+});
 
 test('a handler alone does not authorize an undeclared local function', async t => {
   const { client } = await fixture(t, ({ complete }) => complete('', { output: [{ type: 'function_call', name: 'create_sticker', call_id: 'c', arguments: '{}' }] }));

@@ -11,7 +11,9 @@ cd /path/to/slack-agentic-api-app
 slack app link --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID --environment local
 ```
 
-App IDs and workspace IDs are identifiers, not access tokens. Linking an App Settings app keeps its remote manifest as the source of truth. Inspect its current configuration and add the scopes and event subscriptions required by `slack-app-manifest.json`, while retaining the app's existing identity and AI settings. Reinstall if Slack requests it after a scope change.
+App IDs and workspace IDs are identifiers, not access tokens. For an App Settings app, set `manifest.source` to `remote` in `.slack/config.json` to keep App Settings as the source of truth. Inspect its current configuration and add the scopes and event subscriptions required by `slack-app-manifest.json`, while retaining the app's existing identity and AI settings. Reinstall after a scope change.
+
+To apply changes through the CLI, save the existing manifest with your changes in the private `.slack/manifest.local.json`; the manifest hook uses it when present. Temporarily set `manifest.source` to `local`, run `slack manifest sync --manifest-source local --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID`, then restore `remote` and restart `slack run` to reinstall. The CLI refuses manifest synchronization while the project source is `remote`. This project uses a manifest hook, so the CLI's warning about not writing a root `manifest.json` is expected; retain your merged private file.
 
 Configure `AGENTIC_WS_URL` and `AGENTIC_MODEL` in `.env`, and add your Slack member ID as an admin in `access.json`. Then:
 
@@ -23,6 +25,18 @@ slack run --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID
 The CLI provides the Slack bot and app tokens to the running process. Leave the token entries in `.env` empty for this workflow. For standalone `npm start` or systemd hosting, set the persistent `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` yourself in `.env`; never paste them into chat. Run only one bridge process for the app.
 
 The CLI flow is for local development. The [hosting guide](./hosting) describes keeping the bot running as a service. Local app links and private configuration under `.slack/` are ignored by Git.
+
+The start hook uses `exec node index.js` on Linux/macOS so CLI stop and reload signals reach the bot directly. A wrapper process can otherwise leave an old Socket Mode connection running and receiving events after a reload.
+
+### App icon
+
+The Meow-AI cat avatar is saved at `assets/meow-ai.png`. With Slack CLI 4.7 or newer, upload it when starting the app:
+
+```bash
+SLACK_CLI_APP_ICON_PATH=assets/meow-ai.png slack run --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID --manifest-source remote
+```
+
+The CLI prints `Updated app icon` when Slack accepts the upload. Substitute your own square image path to use different branding. See Slack's [icon upload support](https://docs.slack.dev/changelog/2026/08/28/slack-cli/) and [icon path environment variable](https://docs.slack.dev/changelog/2026/05/19/slack-cli/).
 
 ## Create a new app or configure tokens manually
 

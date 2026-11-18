@@ -17,7 +17,7 @@ await bot.mention('UADMIN', 'multi examine edge cases', thread);
 ok(Boolean(bot.gateway.requests.at(-1).previous_response_id), 'multi follow-up continues the agent tree');
 bot.setMode('code');
 await bot.mention('UADMIN', 'calculate six times seven', thread);
-ok(!bot.gateway.requests.at(-1).previous_response_id && !bot.gateway.requests.at(-1).multi_agent, 'standard requests have a separate memory chain from multi-agent requests');
+ok(!bot.gateway.requests.at(-1).previous_response_id && !bot.gateway.requests.at(-1).multi_agent.enabled, 'standard requests have a separate memory chain from multi-agent requests');
 ok(Boolean(bot.lastUpdate(a => /result is 42/.test(J(a.blocks)))), 'interpreter result reaches the normal Slack response');
 bot.setMode('steerchat');
 const running = bot.mention('UADMIN', 'long task');

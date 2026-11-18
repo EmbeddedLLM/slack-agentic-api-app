@@ -1,4 +1,5 @@
 apps.dev.json
 apps.json
 config.json
+manifest.local.json
 cache/
