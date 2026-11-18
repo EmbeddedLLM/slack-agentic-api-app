@@ -1,0 +1,26 @@
+[Unit]
+Description=Slack assistant using Agentic API WebSockets
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slack-agentic
+Group=slack-agentic
+WorkingDirectory=/opt/slack-agentic-api-app
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

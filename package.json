@@ -1,0 +1,20 @@
+{
+  "name": "slack-agentic-api-app",
+  "version": "0.1.0",
+  "description": "Self-hosted Slack assistant using Agentic API over WebSocket: access control, files, thread memory, and resumable research.",
+  "type": "module",
+  "private": true,
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/EmbeddedLLM/slack-agentic-api-app.git" },
+  "engines": { "node": ">=22.15" },
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js && node --check src/agentic-client.js && node --check src/research.js && node --check list-users.js && node --check check-files.js",
+    "test": "npm run check && node --test test/*.test.js && node --import ./test/e2e/setup.mjs test/e2e/help.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/research.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/chat.test.mjs",
+    "users": "node list-users.js",
+    "check-files": "node check-files.js",
+    "smoke": "node scripts/smoke.js"
+  },
+  "dependencies": { "@slack/bolt": "^4.7.3", "dotenv": "^16.6.1", "ws": "^8.18.3" },
+  "optionalDependencies": { "md-to-pdf": "5.2.5", "officeparser": "8.8.0" }
+}

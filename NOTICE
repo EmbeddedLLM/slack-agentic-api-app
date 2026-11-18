@@ -1,0 +1,16 @@
+Slack Agentic API App
+
+Derived from EmbeddedLLM/slack-pi-agent-app (Apache License 2.0):
+https://github.com/EmbeddedLLM/slack-pi-agent-app
+Reference commit: 7d4f4a31f73be33602a8f6840e95ab00722d2f6e
+
+The Slack bridge, access controls, file handling, Markdown rendering, help UI,
+admin helpers, and portions of the tests originate in that project.
+
+Modifications (2026): replace the Pi CLI and extensions with native Agentic API
+WebSocket Responses requests, durable response pointers, a checkpointed research
+workflow, revised configuration/deployment documentation, and transport tests.
+
+Agentic API is a separate Apache-2.0 project and service:
+https://github.com/vllm-project/agentic-api
+Protocol reference inspected at: 19b392ce07a13b46b2b6cc7f5353246459088946

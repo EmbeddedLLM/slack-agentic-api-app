@@ -1,0 +1,17 @@
+{
+  "_readme": "Roles: none < viewer < member < admin. Edit users with real Slack member IDs. Missing or invalid policy denies access.",
+  "defaultRole": "none",
+  "allowGuests": false,
+  "roles": {
+    "viewer": { "tools": "", "readUploads": false, "createFiles": false, "maxJobs": 1 },
+    "member": { "tools": "web_search", "readUploads": true, "createFiles": true },
+    "admin": { "tools": "web_search", "readUploads": true, "createFiles": true, "cancelAny": true, "deepResearch": true }
+  },
+  "users": {
+    "U01AAAAAAAA": { "role": "admin", "name": "Replace with your Slack ID" },
+    "U02BBBBBBBB": "member"
+  },
+  "channels": {
+    "_note": "Optional channel ceilings: C01234567: {maxRole: member}"
+  }
+}

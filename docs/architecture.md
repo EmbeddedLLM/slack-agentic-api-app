@@ -1,0 +1,46 @@
+# Architecture
+
+`index.js` owns Slack events, access policy, the bounded job scheduler, per-thread serialization, attachment preparation, output rendering and interactive plans. `src/agentic-client.js` owns WebSocket transport and response validation. `src/research.js` owns the research workflow and checkpoints.
+
+## WebSocket contract
+
+A job connects to `AGENTIC_WS_URL`, normally `ws://127.0.0.1:9000/v1/responses`, with an optional `Authorization: Bearer …` upgrade header. Remote TLS endpoints use `wss://`. URLs with credentials, query parameters or fragments are rejected. The Node `ws` client supports the auth header; no credentials are placed in the URL.
+
+Each turn sends one text frame:
+
+```json
+{
+  "type": "response.create",
+  "stream_id": "unique-request-id",
+  "model": "served-model-id",
+  "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Question"}]}],
+  "tools": [{"type": "web_search"}],
+  "store": true,
+  "stream": true,
+  "max_output_tokens": 8192,
+  "max_tool_calls": 12,
+  "include": ["web_search_call.action.sources"]
+}
+```
+
+A continuation adds `previous_response_id`. Declared tools and instructions are sent again for every response. Frames for another `stream_id` are ignored. Only a valid `response.completed` with a completed response, an ID and assistant output commits local memory. Errors, incomplete responses, dropped connections, empty answers and unsupported client tool calls fail the job. Raw provider errors are not sent to Slack.
+
+There is one connection per active Slack job. Research reuses its connection across section, synthesis and summary requests. A normal chat job closes its connection after the response. Subsequent chat jobs use durable `previous_response_id` continuation on a new connection. This bounds connection lifetime and means a disconnect can cancel one job without affecting another. The gateway has no `response.cancel` frame used by this client: cancellation terminates the job's connection.
+
+The bridge does not automatically retry network failures, because a tool may already have run. It retries one model answer containing unparsed tool-call markup, resetting the local response pointer first. An interrupted research section is rerun only when someone presses Resume.
+
+Slack's Web API and file downloads still use HTTPS, and Slack Socket Mode uses its own WebSocket connection. The bridge-to-Agentic-API inference path uses WebSocket exclusively. The gateway's connection to vLLM is configured separately.
+
+The protocol was checked against [Agentic API's WebSocket documentation](https://github.com/vllm-project/agentic-api/blob/19b392ce07a13b46b2b6cc7f5353246459088946/docs/api/index.md#ws-v1responses).
+
+## State and boundaries
+
+Chat stores only `{responseId}` locally, in a file named by a hash of channel, thread, requester, role permissions, gateway URL and model. Permission changes create a new chain. Recent Slack history is still included within a character budget to capture other users' messages. Posted messages are visible to everyone with access to that Slack conversation; role isolation is not privacy from channel participants.
+
+Without `AGENTIC_SESSION_DIR`, chat sends `store:false` and relies on bounded Slack history. Planning also uses `store:false`. Research always uses `store:true` so checkpoints can survive a socket or bot restart. Persistent IDs require keeping the same gateway database and authentication identity.
+
+Research groups the approved coverage into at most 2, 4 or 6 sections for quick, standard or deep runs. Each section uses gateway web search, with requested domain filters. A section is committed only after a completed response containing successful search calls and retrieved source URLs. Synthesis and summary have no tools. The saved report includes the retrieved source list; source presence does not prove every generated claim is correct.
+
+Reports and checkpoints contain sensitive conversation data. Only known secret strings are redacted; encoded or previously unknown secrets cannot be guaranteed absent. Raw conversation and tool history may remain in the gateway's own database.
+
+No shell, local file browser, MCP server, or code interpreter is exposed to the model by this bridge. Slack attachments are decoded in the bridge; text is bounded and images are sent as `input_image` data URLs. Slack file downloads accept only `https://files.slack.com` with no redirects. Upload folders are removed after each job.
