@@ -14,6 +14,10 @@ Examples:
 
 The last example requires a configured [knowledge base](./files). Help and the Home tab reflect your role's enabled capabilities.
 
+## Talk to another Slack bot
+
+Members and admins can use `@bot ask @peer <question>` to start an exchange in a shared channel. Both apps need to accept each other's bot messages. Replies stay in the thread and stop at a persisted per-thread limit. See [bot peer setup](./operations#talk-to-another-slack-assistant).
+
 ## Multi-agent requests
 
 ```text

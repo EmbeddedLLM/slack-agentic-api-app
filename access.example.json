@@ -33,6 +33,9 @@
     },
     "U02BBBBBBBB": "member"
   },
+  "botPeers": {
+    "_note": "Optional trusted bot user IDs with botId, role and maxRepliesPerThread. See docs/operations.md. Other bots are always denied."
+  },
   "channels": {
     "_note": "Optional channel ceilings: C01234567: {maxRole: member}"
   }

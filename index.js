@@ -15,6 +15,7 @@ import pkg from '@slack/bolt';
 import { AgenticClient, AgenticError, atomicJSON, clientSettings, gatewayTools, outputText, readJSON, scopeKey } from './src/agentic-client.js';
 import { executeResearch } from './src/research.js';
 import { renderSticker, stickerTool } from './src/sticker.js';
+import { normalizeBotPeers, peerInChannel, PeerReplyBudget } from './src/bot-peers.js';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -49,6 +50,7 @@ const cfg = {
   stickersEnabled: bool(env.STICKERS_ENABLED, true),
   researchMultiAgent: bool(env.RESEARCH_MULTI_AGENT, true),
   accessFile: env.ACCESS_FILE || path.join(process.cwd(), 'access.json'),
+  botPeerStateDir: env.BOT_PEER_STATE_DIR || path.join(process.cwd(), 'data', 'bot-peers'),
   sessionDir: env.AGENTIC_SESSION_DIR === '' ? '' : env.AGENTIC_SESSION_DIR || path.join(process.cwd(), 'data', 'sessions'),
   historyLimit: int(env.HISTORY_LIMIT, 50),
   contextChars: int(env.CONTEXT_CHAR_BUDGET, 24_000),
@@ -184,6 +186,7 @@ const mentionsBot = (text = '') => botUserId && text.includes(`<@${botUserId}>`)
 const seenEvents = new Map(); // "channel:ts" -> time
 const followedThreads = new Map(); // "channel:thread_ts" -> last used
 const activePlaceholders = new Set(); // placeholder ts values, excluded from context
+const peerReplyBudget = new PeerReplyBudget(cfg.botPeerStateDir);
 
 const threadKey = (channel, ts) => `${channel}:${ts}`;
 const rememberThread = (channel, ts) => followedThreads.set(threadKey(channel, ts), Date.now());
@@ -314,13 +317,15 @@ async function getUser(client, userId) {
       tz: u?.tz || 'UTC',
       deleted: Boolean(u?.deleted),
       bot: Boolean(u?.is_bot),
+      botId: u?.profile?.bot_id || '',
+      verified: Boolean(u?.id === userId),
       guest: Boolean(u?.is_restricted || u?.is_ultra_restricted),
       fetchedAt: Date.now(),
     };
     userCache.set(userId, user);
     return user;
   } catch {
-    if (cached) return cached;
+    if (cached) return { ...cached, verified: false };
     const user = { name: userId, tz: 'UTC', fetchedAt: Date.now() - USER_TTL_MS + 60_000 }; // retry in a minute
     userCache.set(userId, user);
     return user;
@@ -367,6 +372,7 @@ function normalizeAccess(raw) {
     roles,
     users,
     channels,
+    botPeers: normalizeBotPeers(raw.botPeers),
     defaultRole: check(raw.defaultRole ?? 'none', 'defaultRole'),
     allowGuests: raw.allowGuests === true,
     source: 'file',
@@ -388,7 +394,7 @@ function loadAccess() {
     log('access_file_error', { error: err.message, using: accessState.data ? 'last good version' : 'deny everyone' });
   }
   return (
-    accessState.data || { roles: defaultRoles(), users: {}, channels: {}, defaultRole: 'none', allowGuests: false, source: 'error' }
+    accessState.data || { roles: defaultRoles(), users: {}, channels: {}, botPeers: {}, defaultRole: 'none', allowGuests: false, source: 'error' }
   );
 }
 
@@ -398,12 +404,19 @@ async function resolveAccess(client, userId, channel) {
   const listed = acc.users[userId];
   let roleName = listed ?? acc.defaultRole;
   let why = listed ? 'listed in access file' : `default role${acc.source === 'env' ? ' (no ACCESS_FILE set)' : ''}`;
+  const peer = acc.botPeers[userId];
   if (user.deleted) [roleName, why] = ['none', 'account deactivated'];
-  else if (user.bot) [roleName, why] = ['none', 'bots cannot use the assistant'];
+  else if (user.bot || peer) {
+    [roleName, why] = userId !== botUserId && user.verified && user.bot && user.botId === peer?.botId && peerInChannel(peer, channel)
+      ? [peer.role, 'trusted bot peer'] : ['none', 'bot is not an authorized peer in this channel'];
+  }
   else if (user.guest && !acc.allowGuests && !listed) [roleName, why] = ['none', 'guest account, not listed'];
   const cap = acc.channels[channel];
   if (cap && roleRank(roleName) > roleRank(cap)) [roleName, why] = [cap, `${why}; limited to ${cap} in this channel`];
-  return { roleName, role: acc.roles[roleName] || { use: false }, why };
+  const role = acc.roles[roleName] || { use: false };
+  // Peers can answer with the configured role's tools, but cannot control human
+  // jobs or research plans, or launch further multi-agent runs.
+  return { roleName, role: user.bot ? { ...role, cancelAny: false, deepResearch: false, multiAgent: false, maxJobs: 1 } : role, why };
 }
 
 function describeAccess(userId, a) {
@@ -2148,6 +2161,63 @@ async function maybeTip(client, { channel, threadTs, user, role, userText }) {
 const ALLOWED_SUBTYPES = new Set([undefined, 'file_share', 'thread_broadcast']);
 const MULTI_RE = /^multi(?:[ -]agent)?(?:\s+|$)([\s\S]*)$/i;
 const STEER_RE = /^steer(?:\s+|$)([\s\S]*)$/i;
+const ASK_PEER_RE = /^ask\s+<@([UW][A-Z0-9]+)>(?:\s+([\s\S]*))?$/i;
+
+async function askPeer(event, client, match, access) {
+  const say = text => ephemeral(client, event.channel, event.user, event.thread_ts || event.ts, text);
+  const requester = await getUser(client, event.user);
+  if (!requester.verified || requester.bot || roleRank(access.roleName) < roleRank('member')) {
+    return say('Only members and admins can start an exchange with another bot.');
+  }
+  const peer = loadAccess().botPeers[match[1]];
+  if (!peerInChannel(peer, event.channel) || peer.userId === botUserId || !(await resolveAccess(client, peer.userId, event.channel)).role.use) {
+    return say('That bot is not an enabled peer in this channel. Ask an admin to configure it in botPeers.');
+  }
+  const question = match[2]?.trim();
+  if (!question || question.length > 2400 || event.files?.length) return say('Use `ask @bot <question>` with up to 2,400 characters. Share files in the thread separately.');
+  // Both apps must already be in the channel; never invite apps implicitly.
+  let cursor;
+  let present = false;
+  do {
+    const page = await client.conversations.members({ channel: event.channel, limit: 200, ...(cursor ? { cursor } : {}) });
+    present = page.members?.includes(peer.userId);
+    cursor = page.response_metadata?.next_cursor;
+  } while (!present && cursor);
+  if (!present) return say('Invite that bot to this channel first, then send the ask command again.');
+  const threadTs = event.thread_ts || event.ts;
+  if (!peerReplyBudget.reset(peer, event.channel, threadTs, event.ts)) return;
+  const safe = redactInternalPaths(redactSecrets(await renderSlackText(client, question)).text).text;
+  await client.chat.postMessage({ channel: event.channel, thread_ts: threadTs,
+    text: `<@${peer.userId}> ${toMrkdwn(safe)}\n\nPlease tag <@${botUserId}> in your reply in this thread.`,
+    unfurl_links: false, unfurl_media: false });
+  log('bot_peer_asked', { user: event.user, peer: peer.userId, channel: event.channel, threadTs });
+}
+
+async function dispatchRequest(event, client, options = {}) {
+  if (isOwnMessage(event) || event.hidden) return;
+  const peers = loadAccess().botPeers;
+  const peer = peers[event.user] || Object.values(peers).find(p => p.botId === event.bot_id);
+  if (event.bot_id || event.subtype === 'bot_message' || peer) {
+    if (!peer || !peerInChannel(peer, event.channel) || !mentionsBot(event.text) ||
+        (event.user && event.user !== peer.userId) || (event.bot_id && event.bot_id !== peer.botId) ||
+        ![undefined, 'bot_message', 'file_share', 'thread_broadcast'].includes(event.subtype)) return;
+    const identity = await getUser(client, peer.userId);
+    if (!identity.verified || !identity.bot || identity.deleted || identity.botId !== peer.botId) return;
+    return handleRequest({ ...event, user: peer.userId }, client, { explicit: false, peer });
+  }
+  return handleRequest(event, client, options);
+}
+
+async function postPeerReply(client, job, peer, markdown, remaining) {
+  // A fresh post emits a message event to the other app. Updating the working
+  // placeholder alone only emits message_changed, which most bots ignore.
+  const body = toMrkdwn(markdown);
+  const text = `<@${peer.userId}> ${body.length > 2500 ? `${body.slice(0, 2480)}\n…` : body}` +
+    (remaining === 0 ? '\n\n_Exchange limit reached. A teammate can use `ask @bot <question>` to continue._' : '');
+  await client.chat.postMessage({ channel: job.channel, thread_ts: job.threadTs, text,
+    blocks: [{ type: 'section', text: { type: 'mrkdwn', text } }], unfurl_links: false, unfurl_media: false });
+  await setStatus(client, job, '_Reply sent below._', false);
+}
 
 async function steerRequest(event, client, update, access) {
   const say = text => ephemeral(client, event.channel, event.user, event.thread_ts || event.ts, text);
@@ -2171,8 +2241,8 @@ async function steerRequest(event, client, update, access) {
 
 // explicit = an @mention or DM. Follow-ups in a thread without a mention are
 // implicit: people without access are ignored silently instead of told off.
-async function handleRequest(event, client, { explicit = true } = {}) {
-  if (event.bot_id || !ALLOWED_SUBTYPES.has(event.subtype)) return;
+async function handleRequest(event, client, { explicit = true, peer = null } = {}) {
+  if (!peer && (event.bot_id || !ALLOWED_SUBTYPES.has(event.subtype))) return;
 
   const id = `${event.channel}:${event.ts}`;
   if (seenEvents.has(id)) return; // Slack retries / app_mention + message overlap
@@ -2180,7 +2250,8 @@ async function handleRequest(event, client, { explicit = true } = {}) {
 
   const channel = event.channel;
   const threadTs = event.thread_ts || event.ts;
-  const typed = (await renderSlackText(client, (event.text || '').split(`<@${botUserId}>`).join(''))).trim();
+  const rawText = (event.text || '').split(`<@${botUserId}>`).join('').trim();
+  const typed = (await renderSlackText(client, rawText)).trim();
   const multiCmd = explicit ? MULTI_RE.exec(typed) : null;
   const userText = (multiCmd ? multiCmd[1].trim() : typed) || 'Please look at the attached file(s).';
 
@@ -2190,7 +2261,7 @@ async function handleRequest(event, client, { explicit = true } = {}) {
   }
 
   // Greetings stay brief; the full guide is only sent when explicitly requested.
-  if ((!typed || GREETING_RE.test(typed)) && !event.files?.length) {
+  if (!peer && (!typed || GREETING_RE.test(typed)) && !event.files?.length) {
     if (explicit) await sendGreeting(client, event, await resolveAccess(client, event.user, channel));
     return;
   }
@@ -2214,6 +2285,16 @@ async function handleRequest(event, client, { explicit = true } = {}) {
     return;
   }
 
+  const askCmd = explicit && !peer ? ASK_PEER_RE.exec(rawText) : null;
+  if (askCmd) {
+    try { await askPeer(event, client, askCmd, access); }
+    catch (error) {
+      log('bot_peer_ask_failed', { channel, error: error.code || error.message });
+      await ephemeral(client, channel, event.user, threadTs, 'I could not send the question to that bot. An admin can check the bot logs.');
+    }
+    return;
+  }
+
   const steerCmd = explicit ? STEER_RE.exec(typed) : null;
   if (steerCmd) return steerRequest(event, client, steerCmd[1], access);
   if (multiCmd && (!cfg.multiAgentEnabled || !access.role.multiAgent)) {
@@ -2223,6 +2304,7 @@ async function handleRequest(event, client, { explicit = true } = {}) {
 
   const maxJobs = access.role.maxJobs ?? cfg.maxJobsPerUser;
   if (userJobCount(event.user) >= maxJobs) {
+    if (peer) return;
     await ephemeral(
       client,
       channel,
@@ -2262,6 +2344,16 @@ async function handleRequest(event, client, { explicit = true } = {}) {
       await ephemeral(client, channel, event.user, threadTs, 'A research is running in this thread. Ask me again when it has finished, or ask in a new thread.');
     }
     return;
+  }
+
+  let peerTurn;
+  if (peer) {
+    try { peerTurn = peerReplyBudget.take(peer, channel, threadTs, event.ts); }
+    catch (error) { log('bot_peer_budget_error', { user: event.user, channel, error: error.message }); }
+    if (!peerTurn) {
+      log('bot_peer_ignored', { user: event.user, channel, threadTs, reason: 'reply budget unavailable or exhausted' });
+      return;
+    }
   }
 
   const requester = await getUser(client, event.user);
@@ -2337,7 +2429,11 @@ async function handleRequest(event, client, { explicit = true } = {}) {
           const prompt = buildPrompt({
             requester,
             channelLabel,
-            extra: [...capabilityPrompt(perms, requester.name), ...(followUp ? ['', ...followUp.rules] : [])],
+            extra: [...capabilityPrompt(perms, requester.name), ...(followUp ? ['', ...followUp.rules] : []),
+              ...(peer ? ['You are replying to another team assistant in a shared Slack thread.',
+                'Answer its question directly in at most 180 words. Your app adds the recipient mention.',
+                'Do not write Slack mentions, start a new exchange, or claim to have sent messages elsewhere.',
+                ...(peerTurn.remaining === 0 ? ['This is the last allowed reply in this exchange. Finish with a conclusion, without a follow-up question.'] : [])] : [])],
             history: history.text,
             attachments: uploadsBlocked
               ? `(${sharedFiles.length} file(s) were shared, but ${requester.name} is not allowed to share files with you. Say so if relevant.)`
@@ -2393,11 +2489,15 @@ async function handleRequest(event, client, { explicit = true } = {}) {
     files.unshift(...(job.generatedFiles || []));
     files.splice(cfg.maxFiles);
     replyChars = safeReply.length;
-    await postReply(
-      client,
-      { channel, threadTs, placeholderTs: placeholder.ts, canCreateFiles: Boolean(perms.createFiles) },
-      chatText || (files.length ? 'Here are the files you asked for.' : 'Done.')
-    );
+    const replyText = chatText || (files.length ? 'Here are the files you asked for.' : 'Done.');
+    if (peer) {
+      // Honor policy changes that happened while the model was working.
+      const latest = await resolveAccess(client, event.user, channel);
+      if (!latest.role.use || JSON.stringify(latest.role) !== job.permissionSnapshot) throw new UserFacingError('Bot peer permissions changed; the reply was stopped.');
+      await postPeerReply(client, job, peer, replyText, peerTurn.remaining);
+    } else {
+      await postReply(client, { channel, threadTs, placeholderTs: placeholder.ts, canCreateFiles: Boolean(perms.createFiles) }, replyText);
+    }
     if (files.length && perms.createFiles) {
       log('files', { id, names: files.map((f) => f.filename) });
       await uploadFiles(client, channel, threadTs, files);
@@ -2407,7 +2507,7 @@ async function handleRequest(event, client, { explicit = true } = {}) {
     }
     await react(client, channel, event.ts, 'eyes', true);
     await react(client, channel, event.ts, 'white_check_mark');
-    await maybeTip(client, { channel, threadTs, user: event.user, role: perms, userText });
+    if (!peer) await maybeTip(client, { channel, threadTs, user: event.user, role: perms, userText });
   } catch (err) {
     if (err instanceof CancelledError) {
       outcome = 'cancelled';
@@ -2441,12 +2541,13 @@ async function handleRequest(event, client, { explicit = true } = {}) {
 
 // @mentions in channels, private channels and group DMs.
 app.event('app_mention', async ({ event, client }) => {
-  await handleRequest(event, client);
+  await dispatchRequest(event, client);
 });
 
 // DMs, plus (only with THREAD_FOLLOW=true) follow-ups without an @mention in
 // threads the bot is already part of.
 app.event('message', async ({ event, client }) => {
+  if (event.bot_id || event.subtype === 'bot_message' || loadAccess().botPeers[event.user]) return dispatchRequest(event, client);
   if (event.bot_id || !ALLOWED_SUBTYPES.has(event.subtype)) return;
   if (event.channel_type === 'im') return handleRequest(event, client);
   if (mentionsBot(event.text)) return; // app_mention handles it

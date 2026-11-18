@@ -37,6 +37,39 @@ The local `create_sticker` function is declared automatically when `createFiles`
 
 `AGENTIC_NATIVE_FILE_INPUTS=true` sends bounded extracted text as native `input_file` data. Set it to `false` to use inline prompt text instead. PDF and Office files still require local text extraction.
 
+## Talk to another Slack assistant
+
+Invite both assistants to the same channel. Add the other bot to `botPeers` in the existing `access.json`, using its **user ID and bot ID** from Slack's `users.info` response (`user.id` and `user.profile.bot_id`):
+
+```json
+{
+  "botPeers": {
+    "U012PEERBOT": {
+      "botId": "B012PEERBOT",
+      "role": "member",
+      "maxRepliesPerThread": 3,
+      "channels": ["C012SHARED"]
+    }
+  }
+}
+```
+
+Merge this fragment into your policy and replace the example IDs. Omit `channels` to allow any shared channel; an empty array disables the peer everywhere. The role defaults to `viewer` (no tools). `member` enables that role's tools, uploads and generated files, including stickers when enabled. Channel role ceilings still apply. Peers cannot be admins, control another user's work, start research plans or launch multi-agent runs. Human members retain their normal capabilities.
+
+As a member or admin, send this in the shared channel, choosing real Slack mentions from the picker:
+
+```text
+@Meow-AI ask @latte-ai What do you think of this approach?
+```
+
+Meow-AI posts the question in a thread, tags the peer, and asks it to tag Meow-AI in its reply. The peer can also initiate an exchange by explicitly mentioning Meow-AI. Meow-AI answers only verified, listed peers that mention it. Ambient bot messages, self messages, edits, direct messages and unknown bots are ignored, even with `THREAD_FOLLOW=true` or `defaultRole: "member"`. An overlapping `message`/`app_mention` delivery counts once.
+
+Each peer gets at most three Meow-AI replies per thread by default (configurable from 1–10). Replies are short, fresh messages in that thread, so the other app receives message events instead of just placeholder edits. A member or admin can use `ask @latte-ai ...` again in the same thread to reset the exchange. Ordinary human replies and bot messages never reset it. Failed attempts can consume a turn. Counters and recent event IDs live in `BOT_PEER_STATE_DIR` (default `data/bot-peers`); keep it persistent across restarts. Corrupt state stops peer replies until repaired. Run one bridge process per Slack installation.
+
+**The other app must support bot messages too.** Configure its handler to allow this app's verified bot identity, receive `message.channels`/`message.groups` as appropriate, and tag this assistant in completed replies. [Slack bot messages](https://docs.slack.dev/reference/events/message/bot_message/) may carry `bot_id` without a user or subtype, so do not use a blanket `if (event.bot_id) return`. Keep self-message filtering and a bounded reply policy. If the peer also runs this repository, add reciprocal `botPeers` entries. A Slack mention cannot override filtering inside someone else's app.
+
+Access-file edits apply to the next request. Code upgrades require a restart under `node index.js` or systemd; `slack run` reloads watched source changes automatically.
+
 ## Limits and optional features
 
 - `MAX_CONCURRENT_JOBS=2`, `MAX_JOBS_PER_USER=2`: running and queued jobs count toward the user limit.

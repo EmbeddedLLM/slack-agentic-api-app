@@ -48,16 +48,20 @@ export async function startBot(extraEnv = {}) {
     SLACK_BOT_TOKEN: 'xoxb-test-private-token', SLACK_APP_TOKEN: 'xapp-test-private-token',
     AGENTIC_WS_URL: gateway.url, AGENTIC_MODEL: 'test-model', AGENTIC_API_KEY: 'gateway-test-token',
     ACCESS_FILE: path.join(dir, 'access.json'), RESEARCH_DIR: path.join(dir, 'research'),
+    BOT_PEER_STATE_DIR: path.join(dir, 'bot-peers'),
     AGENTIC_SESSION_DIR: path.join(dir, 'sessions'), HINTS_FILE: path.join(dir, 'hints.json'),
     INPUT_FILES_DIR: path.join(dir, 'inputs'), SLACK_REACTIONS: 'false',
     AGENTIC_TOOLS: 'web_search', AGENTIC_TOOLS_TRUSTED: 'web_search', RESEARCH_MULTI_AGENT: 'false', ...extraEnv,
   });
   let ts = 1000;
   const calls = [];
+  const users = {};
+  const members = ['UADMIN', 'UMEM', 'UBOT'];
   const record = m => async (a = {}) => {
     calls.push({ m, a });
     if (m === 'chat.postMessage') return { ok: true, ts: `${++ts}.000100` };
-    if (m === 'users.info') return { user: { id: a.user, real_name: NAMES[a.user] || 'Nora Nobody', tz: 'UTC' } };
+    if (m === 'users.info') return { user: { id: a.user, real_name: NAMES[a.user] || 'Nora Nobody', tz: 'UTC', ...users[a.user] } };
+    if (m === 'conversations.members') return { members };
     if (m === 'conversations.replies' || m === 'conversations.history') return { messages: [] };
     if (m === 'conversations.info') return { channel: { name: 'general', is_channel: true } };
     if (m === 'auth.test') return { user_id: 'UBOT', bot_id: 'B1', user: 'test-bot' };
@@ -70,7 +74,7 @@ export async function startBot(extraEnv = {}) {
   await sleep(20);
   let n = 0;
   const bot = {
-    dir, app, client, calls, gateway, lastTs: '', setMode: value => { mode = value; },
+    dir, app, client, calls, gateway, users, members, lastTs: '', setMode: value => { mode = value; },
     agentCalls: () => gateway.requests.map(request => ({ ...request, prompt: promptText(request) })),
     mention(user, text, thread, files) {
       const event = { type: 'app_mention', user, text: `<@UBOT>${text ? ` ${text}` : ''}`, channel: 'C0TEST', ts: `${2000 + ++n}.000200`, ...(thread ? { thread_ts: thread } : {}), ...(files ? { files } : {}) };
