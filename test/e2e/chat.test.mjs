@@ -34,7 +34,8 @@ globalThis.fetch = async (url, options) => {
   return new Response(url.endsWith('.png') ? Buffer.from([137,80,78,71]) : 'attachment content', { headers: { 'content-type': 'application/octet-stream' } });
 };
 await bot.mention('UMEM', 'read attached file', undefined, [{ id: 'F1', name: 'notes.txt', url_private: 'https://files.slack.com/notes.txt', size: 18 }]);
-ok(/attachment content/.test(bot.agentCalls().at(-1).prompt), 'text upload is included in the prompt');
+const nativeFile = bot.agentCalls().at(-1).input[0].content.find(part => part.type === 'input_file');
+ok(nativeFile && Buffer.from(nativeFile.file_data.split(',')[1], 'base64').toString() === 'attachment content', 'text upload uses native input_file content');
 await bot.mention('UMEM', 'describe attached image', undefined, [{ id: 'F2', name: 'photo.png', url_private: 'https://files.slack.com/photo.png', size: 4 }]);
 ok(bot.agentCalls().at(-1).input[0].content.some(part => part.type === 'input_image' && part.image_url.startsWith('data:image/png;base64,')), 'image upload uses Responses input_image data URL');
 await bot.mention('UMEM', 'read external file', undefined, [{ id: 'F3', name: 'bad.txt', url_private: 'https://example.org/bad.txt', size: 4 }]);

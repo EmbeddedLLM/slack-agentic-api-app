@@ -5,6 +5,8 @@ import { registerHooks } from 'node:module';
 const stubs = {
   '@slack/bolt': new URL('./stubs/bolt.mjs', import.meta.url).href,
   'dotenv/config': new URL('./stubs/dotenv.mjs', import.meta.url).href,
+  // Keep the unavailable-PDF path deterministic on full and minimal installs.
+  'md-to-pdf': new URL('./stubs/no-pdf.mjs', import.meta.url).href,
 };
 
 registerHooks({

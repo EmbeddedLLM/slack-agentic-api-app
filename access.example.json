@@ -3,12 +3,31 @@
   "defaultRole": "none",
   "allowGuests": false,
   "roles": {
-    "viewer": { "tools": "", "readUploads": false, "createFiles": false, "maxJobs": 1 },
-    "member": { "tools": "web_search", "readUploads": true, "createFiles": true },
-    "admin": { "tools": "web_search", "readUploads": true, "createFiles": true, "cancelAny": true, "deepResearch": true }
+    "viewer": {
+      "tools": "",
+      "readUploads": false,
+      "createFiles": false,
+      "maxJobs": 1
+    },
+    "member": {
+      "tools": "web_search",
+      "readUploads": true,
+      "createFiles": true
+    },
+    "admin": {
+      "tools": "web_search,code_interpreter",
+      "readUploads": true,
+      "createFiles": true,
+      "cancelAny": true,
+      "deepResearch": true,
+      "multiAgent": true
+    }
   },
   "users": {
-    "U01AAAAAAAA": { "role": "admin", "name": "Replace with your Slack ID" },
+    "U01AAAAAAAA": {
+      "role": "admin",
+      "name": "Replace with your Slack ID"
+    },
     "U02BBBBBBBB": "member"
   },
   "channels": {

@@ -8,7 +8,16 @@ const NAMES = { UADMIN: 'Ada Admin', UMEM: 'Mo Member', UVIEW: 'Val Viewer' };
 export async function startBot(extraEnv = {}) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'slack-agentic-e2e-'));
   let mode = 'complete';
-  const gateway = await fakeGateway(({ request, complete, send }) => {
+  const activeStreams = new Map();
+  const gateway = await fakeGateway(({ request, complete, send, socket, id }) => {
+    if (request.type === 'response.steer') {
+      const active = activeStreams.get(socket);
+      send({ type: 'response.steer.accepted', steer: { id: 'steer_test', previous_response_id: request.previous_response_id } });
+      send({ type: 'response.incomplete', response: { id: active.id, status: 'incomplete', incomplete_details: { reason: 'steered' } } });
+      send({ type: 'response.created', response: { id, previous_response_id: active.id, status: 'in_progress' } });
+      send({ type: 'response.completed', response: response('updated answer', { id }) });
+      return;
+    }
     const prompt = promptText(request);
     if (/plan a deep web research job/.test(prompt)) {
       complete(JSON.stringify({ title: 'Vector DB comparison', question: 'Compare vector databases', depth: 'standard', cover: ['Latency', 'Cost'], domains: [], questions: [{ question: 'How many vectors?', options: [] }], answers: [] }));
@@ -18,7 +27,18 @@ export async function startBot(extraEnv = {}) {
       complete('Evidence from [source](https://example.org/source)', { output: [searchItem, ...response('Evidence from [source](https://example.org/source)').output] });
     } else if (/Write the full research report/.test(prompt)) complete('# Report\nMilvus and Qdrant have different tradeoffs. [source](https://example.org/source)');
     else if (/Summarize the report above/.test(prompt)) complete('Milvus and Qdrant have different tradeoffs. [source](https://example.org/source)');
+    else if (mode === 'steerchat') { activeStreams.set(socket, { id }); send({ type: 'response.created', response: { id, status: 'in_progress' } }); return; }
     else if (mode === 'slowchat') return;
+    else if (mode === 'code') complete('The result is 42.', { output: [{ type: 'code_interpreter_call', status: 'completed', outputs: [{ type: 'logs', logs: '42' }] }, ...response('The result is 42.').output] });
+    else if (mode === 'multi') complete('combined answer', { output: [{ ...response('child details').output[0], agent: { agent_name: '/root/helper' } }, { ...response('combined answer').output[0], agent: { agent_name: '/root' }, phase: 'final_answer' }] });
+    else if (mode === 'image-sticker') {
+      if (request.input.some(item => item.type === 'function_call_output')) complete('Your image is now a bouncing GIF sticker.');
+      else complete('', { output: [{ type: 'function_call', name: 'create_sticker', call_id: 'image_sticker_call', arguments: JSON.stringify({ filename: 'uploaded-sticker.gif', prompt: 'Bounce this image', frames: null, source_image: { id: 'image_1', motion: 'bounce', background: 'keep' } }) }] });
+    }
+    else if (mode === 'sticker') {
+      if (request.input.some(item => item.type === 'function_call_output')) complete('Here is your dancing sticker.');
+      else complete('', { output: [{ type: 'function_call', name: 'create_sticker', call_id: 'sticker_call', arguments: JSON.stringify({ filename: 'dancing-cat.gif', frames: [80, 140].map(x => ({ duration_ms: 120, svg: `<svg width="256" height="256" viewBox="0 0 256 256"><circle cx="${x}" cy="128" r="40" fill="#ffaa33"/></svg>` })) }) }] });
+    }
     else if (mode === 'file') complete('Here is the result.\n<slack_file name="result.csv">\na,b\n1,2\n</slack_file>');
     else if (mode === 'long') complete('normal answer '.repeat(1200));
     else complete(`normal answer${prompt.includes('<research_evidence>') ? ' from saved evidence' : ''}`);
@@ -30,7 +50,7 @@ export async function startBot(extraEnv = {}) {
     ACCESS_FILE: path.join(dir, 'access.json'), RESEARCH_DIR: path.join(dir, 'research'),
     AGENTIC_SESSION_DIR: path.join(dir, 'sessions'), HINTS_FILE: path.join(dir, 'hints.json'),
     INPUT_FILES_DIR: path.join(dir, 'inputs'), SLACK_REACTIONS: 'false',
-    AGENTIC_TOOLS: 'web_search', AGENTIC_TOOLS_TRUSTED: 'web_search', ...extraEnv,
+    AGENTIC_TOOLS: 'web_search', AGENTIC_TOOLS_TRUSTED: 'web_search', RESEARCH_MULTI_AGENT: 'false', ...extraEnv,
   });
   let ts = 1000;
   const calls = [];

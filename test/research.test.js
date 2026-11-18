@@ -51,3 +51,29 @@ test('research does not claim success without retrieved sources', async t => {
   assert.equal(readJSON(path.join(dir, readdirSync(dir)[0], 'checkpoint.partial.json')).sections.length, 0);
   await assert.rejects(executeResearch({ client, runsDir: dir, resume: '/tmp/outside/checkpoint.partial.json' }), /does not belong/);
 });
+
+test('research redeclares multi-agent mode and preserves permissions in checkpoints', async t => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'agentic-research-multi-'));
+  const gateway = await fakeGateway(({ complete, request }) => complete('Evidence', { output: [...(request.tools.length ? [searchItem] : []), ...response('Evidence').output] }));
+  const client = new AgenticClient({ url: gateway.url, model: 'test-model' });
+  t.after(async () => { client.close(); await gateway.close(); rmSync(dir, { recursive: true }); });
+  const multiAgent = { enabled: true, max_concurrent_subagents: 2 };
+  const report = await executeResearch({ client, runsDir: dir, plan, tools: 'web_search,code_interpreter,file_search', vectorStoreIds: ['vs_research'], multiAgent });
+  assert.ok(gateway.requests.every(request => request.multi_agent.max_concurrent_subagents === 2 && !Object.hasOwn(request, 'max_tool_calls')));
+  assert.deepEqual(gateway.requests[0].tools.map(tool => tool.type), ['web_search', 'code_interpreter', 'file_search']);
+  assert.deepEqual(readJSON(report.art.json).execution.vectorStoreIds, ['vs_research']);
+});
+
+test('resume refuses revoked tools, stores and delegation permissions before inference', async t => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'agentic-research-permissions-'));
+  const gateway = await fakeGateway(({ complete }) => complete('No sources available.'));
+  const client = new AgenticClient({ url: gateway.url, model: 'test-model' });
+  t.after(async () => { client.close(); await gateway.close(); rmSync(dir, { recursive: true }); });
+  const permissions = { tools: 'web_search,code_interpreter,file_search', vectorStoreIds: ['vs_team'], multiAgent: { enabled: true, max_concurrent_subagents: 2 } };
+  await assert.rejects(executeResearch({ client, runsDir: dir, plan, ...permissions }), /did not retrieve/);
+  const checkpoint = path.join(dir, readdirSync(dir)[0], 'checkpoint.partial.json');
+  for (const change of [{ tools: 'web_search,file_search' }, { vectorStoreIds: ['vs_other'] }, { multiAgent: null }]) {
+    await assert.rejects(executeResearch({ client, runsDir: dir, resume: checkpoint, ...permissions, ...change }), /no longer allowed/);
+  }
+  assert.equal(gateway.requests.length, 1);
+});

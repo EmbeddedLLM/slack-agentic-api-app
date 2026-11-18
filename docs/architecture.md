@@ -1,6 +1,6 @@
 # Architecture
 
-`index.js` owns Slack events, access policy, the bounded job scheduler, per-thread serialization, attachment preparation, output rendering and interactive plans. `src/agentic-client.js` owns WebSocket transport and response validation. `src/research.js` owns the research workflow and checkpoints.
+`index.js` owns Slack events, access policy, the bounded job scheduler, per-thread serialization, attachment preparation, output rendering and interactive plans. `src/agentic-client.js` owns WebSocket transport and response validation. `src/research.js` owns the research workflow and checkpoints. `src/steering.js` tracks accepted updates through successor creation; `src/knowledge-client.js` handles administrative file uploads and indexing.
 
 ## WebSocket contract
 
@@ -23,7 +23,7 @@ Each turn sends one text frame:
 }
 ```
 
-A continuation adds `previous_response_id`. Declared tools and instructions are sent again for every response. Frames for another `stream_id` are ignored. Only a valid `response.completed` with a completed response, an ID and assistant output commits local memory. Errors, incomplete responses, dropped connections, empty answers and unsupported client tool calls fail the job. Raw provider errors are not sent to Slack.
+A continuation adds `previous_response_id`. Declared tools and instructions are sent again for every response. Frames for another `stream_id` are ignored. Only a valid `response.completed` with a completed response, an ID and assistant output commits local memory. Errors, incomplete responses, dropped connections, empty answers and undeclared client tool calls fail the job. Declared local functions return matching `function_call_output` items and continue over the same WebSocket, retaining tools and multi-agent settings. Raw provider errors are not sent to Slack.
 
 There is one connection per active Slack job. Research reuses its connection across section, synthesis and summary requests. A normal chat job closes its connection after the response. Subsequent chat jobs use durable `previous_response_id` continuation on a new connection. This bounds connection lifetime and means a disconnect can cancel one job without affecting another. The gateway has no `response.cancel` frame used by this client: cancellation terminates the job's connection.
 
@@ -35,7 +35,7 @@ The protocol was checked against [Agentic API's WebSocket documentation](https:/
 
 ## State and boundaries
 
-Chat stores only `{responseId}` locally, in a file named by a hash of channel, thread, requester, role permissions, gateway URL and model. Permission changes create a new chain. Recent Slack history is still included within a character budget to capture other users' messages. Posted messages are visible to everyone with access to that Slack conversation; role isolation is not privacy from channel participants.
+Chat stores only `{responseId}` locally, in a file named by a hash of channel, thread, requester, role permissions, gateway URL, model and multi-agent mode. Permission changes create a new chain. Recent Slack history is still included within a character budget to capture other users' messages. Posted messages are visible to everyone with access to that Slack conversation; role isolation is not privacy from channel participants.
 
 Without `AGENTIC_SESSION_DIR`, chat sends `store:false` and relies on bounded Slack history. Planning also uses `store:false`. Research always uses `store:true` so checkpoints can survive a socket or bot restart. Persistent IDs require keeping the same gateway database and authentication identity.
 
@@ -43,4 +43,18 @@ Research groups the approved coverage into at most 2, 4 or 6 sections for quick,
 
 Reports and checkpoints contain sensitive conversation data. Only known secret strings are redacted; encoded or previously unknown secrets cannot be guaranteed absent. Raw conversation and tool history may remain in the gateway's own database.
 
-No shell, local file browser, MCP server, or code interpreter is exposed to the model by this bridge. Slack attachments are decoded in the bridge; text is bounded and images are sent as `input_image` data URLs. Slack file downloads accept only `https://files.slack.com` with no redirects. Upload folders are removed after each job.
+The gateway owns web search, code interpreter and file search. Python runs in fresh Eryx sandboxes with printed text output, without network or artifact exchange. No local shell, file browser or MCP server is exposed. Slack attachments are decoded in the bridge; bounded text is sent as native UTF-8 `input_file` data and images as `input_image` data URLs. Slack file downloads accept only `https://files.slack.com` with no redirects. Upload folders are removed after each job.
+
+## Multi-agent and steering
+
+`multi_agent` is redeclared on every multi-agent response, including research synthesis and resume. These requests omit the incompatible `max_tool_calls` field. Only root assistant messages (excluding commentary) become the Slack answer. Tool and delegation events update the job status.
+
+`steer <update>` targets the requester's running standard job in the same thread. The control frame carries `type: response.steer`, `previous_response_id` and `input`, without `stream_id` or replacement model/tool settings. An accepted acknowledgement means retained, not applied. The bridge waits for the successor's `response.created`, handles a parent completion that races the update, and persists only the final successor response. Research and multi-agent jobs cannot be steered in this version.
+
+## Knowledge storage
+
+Inference, including file search, uses WebSocket. Administrative ingestion uses the gateway HTTP Files and Vector Stores APIs, as in its playground. Store IDs are selected by access policy, not user prompts. Slack attachments remain request inputs; they are not automatically added to a shared knowledge base. File citations are rendered with filenames.
+
+## Local sticker function
+
+For file-authorized chat roles, `create_sticker` validates model-provided SVG frames, renders a bounded GIF in a separate worker, and queues the bytes for the Slack reply. No generated JavaScript, shell commands or filesystem paths are executed. Stored responses continue by ID after a function call; stateless requests replay the original public output and matching call result. Local functions have bounded rounds, cancellation and repeated-call protection. See [GIF stickers](./stickers).

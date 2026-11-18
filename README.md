@@ -1,128 +1,81 @@
 # Slack Agentic API App
 
-A self-hosted Slack assistant powered by [Agentic API](https://github.com/vllm-project/agentic-api) and your model server. Adapted from [EmbeddedLLM/slack-pi-agent-app](https://github.com/EmbeddedLLM/slack-pi-agent-app).
+A self-hosted Slack assistant built on [Agentic API](https://github.com/vllm-project/agentic-api), adapted from [EmbeddedLLM/slack-pi-agent-app](https://github.com/EmbeddedLLM/slack-pi-agent-app). All inference uses the native **WebSocket Responses API**.
 
-**The bot uses the native WebSocket Responses API (`ws://` / `wss://…/v1/responses`).** It sends `response.create` frames, consumes response events, and continues conversations with `previous_response_id`. No Pi CLI or HTTP Responses fallback is used.
+## Capabilities
 
-```mermaid
-flowchart LR
-  Slack[Slack Socket Mode] <--> Bot[Node.js Slack bridge]
-  Bot <-->|WebSocket Responses| Gateway[Agentic API]
-  Gateway <-->|Inference| Model[vLLM / model server]
-  Gateway --> Search[Web search provider]
-  Bot --> State[Response pointers and research checkpoints]
-  Gateway --> Database[SQLite or PostgreSQL conversation state]
-```
+- Slack mentions, DMs, threaded memory, role permissions, job limits and cancellation.
+- You.com web search through the gateway, with cited results.
+- `multi <task>` for gateway subagents and multi-agent research.
+- `steer <update>` for an active standard request, with successor tracking.
+- Gateway Python code interpreter for calculations and analysis.
+- Native text/image inputs, optional PDF/Office extraction, and role-scoped file search.
+- Research plans, progress, saved sections, resume, and downloadable reports.
+- Text- or image-plus-prompt GIF stickers, rendered locally as small transparent animations.
+- A VitePress documentation website with local search and hosting instructions.
 
-## Features
+Steering currently supports single-agent chat only. Gateway Python returns text from fresh sandboxes; it cannot exchange files or create downloadable artifacts. Knowledge uploads/indexing use HTTP APIs; inference remains on WebSocket.
 
-- Channel mentions, threaded replies, DMs, role-specific help and Home tab.
-- Access roles (`none`, `viewer`, `member`, `admin`), channel ceilings, live policy reload, per-user job limits and cancellation.
-- Persistent conversation memory, isolated by thread, user, permissions, gateway and model.
-- Gateway-owned web search with cited output.
-- Text and image attachments; optional PDF/Office extraction. Generated Markdown, CSV, JSON and optional PDF files.
-- Research plans with edit/start buttons, progress, cancellation, saved sections, resume and report follow-ups.
-- Slack credentials stay in the bridge. Known secret values and internal paths are scrubbed from Slack replies.
+## Run locally
 
-## Quick start
-
-Requirements: Node.js 22.15+, an Agentic API gateway, a tool-capable model served behind it, and a Slack workspace where you can install an app.
-
-### 1. Start Agentic API
-
-For an existing vLLM server at `http://127.0.0.1:8000`:
-
-```bash
-uvx --from agentic-api==0.10.0 agentic serve --upstream http://127.0.0.1:8000
-```
-
-Configure the model's tool-call parser in vLLM. Use the exact served model ID in `AGENTIC_MODEL`. Enable a search provider on the **gateway**, for example:
-
-```bash
-AGENTIC_WEB_SEARCH_PROVIDER=brave BRAVE_API_KEY=your-search-key \
-  uvx --from agentic-api==0.10.0 agentic serve --upstream http://127.0.0.1:8000
-```
-
-Gateway configuration and persistent storage are separate from the bot. Keep the gateway private or configure authentication and a TLS proxy for `wss://`. See the [upstream quickstart](https://github.com/vllm-project/agentic-api/blob/main/docs/guides/quickstart.md) and [web search configuration](https://github.com/vllm-project/agentic-api/blob/main/docs/guides/web-search.md).
-
-### 2. Configure Slack and the bot
-
-Create a Slack app from [slack-app-manifest.json](slack-app-manifest.json). Install it, copy the bot token (`xoxb-…`), and generate an app-level token (`xapp-…`) with `connections:write`. [Slack setup](docs/slack-setup.md) has the steps.
+Requirements: Node.js 22.15+, Rust 1.98.1 for the gateway source build, a tool-capable model server, and a Slack app. Interpreter execution requires Linux cgroup v2 delegation; see [gateway setup](docs/gateway.md).
 
 ```bash
 git clone https://github.com/EmbeddedLLM/slack-agentic-api-app.git
 cd slack-agentic-api-app
-npm ci --omit=optional
+npm ci
+npm run gateway:install
+cp deploy/gateway.env.example .env.gateway
 cp .env.example .env
 cp access.example.json access.json
+chmod 600 .env .env.gateway access.json
 ```
 
-Edit `.env`:
+`gateway:install` builds **Agentic API main from source**, including `embedded-code-interpreter` and `file-search-pdf`. Source and binary live under `.runtime/agentic-api`; the installed commit is recorded in `.runtime/gateway-source-commit`.
+
+Set `YOU_API_KEY` in `.env.gateway`. Defaults match vLLM at `http://127.0.0.1:5050` and gateway port `9000`. Start the source gateway in a separate terminal with `npm run gateway:start`. If port 9000 already has a gateway, deliberately stop it or select another port first.
+
+Create the Slack app using [slack-app-manifest.json](slack-app-manifest.json); see [Slack setup](docs/slack-setup.md). Put the `xoxb-` bot token and `xapp-` app token in `.env`, set the exact served model ID, and add your Slack member ID to `access.json`. Unlisted users are denied.
 
 ```dotenv
-SLACK_BOT_TOKEN=xoxb-your-bot-token
-SLACK_APP_TOKEN=xapp-your-app-token
 AGENTIC_WS_URL=ws://127.0.0.1:9000/v1/responses
-AGENTIC_MODEL=your-exact-served-model-id
-# AGENTIC_API_KEY=your-gateway-bearer-token
+AGENTIC_MODEL=Qwen/Qwen3.8-27B-FP8
 ```
 
-Edit `access.json` with your Slack member ID as `admin` and teammates as `member`. Unlisted users are denied. The bot rereads the policy; an invalid or missing file denies access.
-
 ```bash
-npm run smoke   # one WebSocket inference request; does not connect to Slack
+npm run smoke
 npm start
 ```
 
-Invite the bot into a channel and try `@bot help`, `@bot summarise this thread`, or `@bot research compare vector databases for our workload`.
+Slack Socket Mode needs **no public URL or inbound listener**. Keep the gateway private, or use `wss://` and gateway authentication for a remote connection.
 
-### 3. Enable document features when needed
+## Hosting and documentation
 
-The minimal install supports text, image input and text-based output files. Install optional dependencies for PDF/Office extraction and PDF generation:
+- [Host the bot on this machine with systemd](docs/hosting.md)
+- [Build and configure the source gateway](docs/gateway.md)
+- [Multi-agent, steering and tools](docs/features.md)
+- [Input files and searchable knowledge](docs/files.md)
+- [Research and recovery](docs/research.md)
+- [Create GIF stickers](docs/stickers.md)
+- [Configuration and operations](docs/operations.md)
+- [Protocol and architecture](docs/architecture.md)
 
 ```bash
-npm ci --include=optional
+npm run docs:dev      # local documentation website
+npm run docs:build    # static site in docs/.vitepress/dist
 ```
 
-PDF export uses Chromium through `md-to-pdf` and needs its OS libraries and sandbox. `officeparser` extracts text from PDF, DOCX, PPTX, XLSX and OpenDocument files. Scanned PDFs need a text layer or separately supplied images. Images require a vision-capable model; text-only models cannot interpret them. A missing PDF renderer leaves the Markdown research report available and reports the PDF error.
+The manual GitHub Pages workflow is prepared for a later publication; a local build does not deploy it.
 
-## How it differs from the Pi app
-
-| Area | This version |
-|---|---|
-| Agent runtime | Native Agentic API WebSocket client, no Pi subprocess |
-| Memory | Stored response IDs; database history lives on the gateway |
-| Tools | `web_search` is gateway-owned; no local `bash`, filesystem tools or package installation |
-| Research | Approved plan → evidence sections → synthesis → summary; each completed response is checkpointed |
-| Resume | Completed sections are retained; the interrupted section is repeated |
-| Follow-ups | Use saved report and research notes, not a cached full-page archive |
-| Research quality | Linked sources and stated limitations; no claim of independent fact checking |
-| Long attachments | Bounded extracted text is inlined; truncation is disclosed, with no local `read` tool fallback |
-
-The bridge currently exposes only `web_search`. MCP and code interpreter configuration on the gateway is not automatically exposed to Slack users.
-
-## Operations and development
-
-- [Configuration, deployment and state](docs/operations.md)
-- [Protocol and implementation](docs/architecture.md)
-- [Configuration template](.env.example) and [access template](access.example.json)
-- [systemd service](deploy/slack-agentic-bot.service)
+## Development
 
 ```bash
-npm ci --omit=optional
 npm test
+AGENTIC_SERVER_BIN=.runtime/agentic-api/target/release/agentic-server node scripts/gateway-integration.js
 ```
 
-Tests use recorded Slack method calls and a real local WebSocket test server. They cover protocol frames, authorization, cancellation, disconnects, thread memory, attachments, research checkpoints and resume. No Slack or model credentials are needed.
+Tests cover WebSocket contracts and Slack handlers without live Slack credentials. The integration script uses a real source-built gateway with isolated storage and a deterministic model stub. Live model quality, You.com credentials, a Slack installation and Chromium rendering need deployment acceptance checks. See [development](docs/development.md).
 
-An optional integration check launches a real Rust gateway with isolated state and a deterministic model stub:
+## License
 
-```bash
-AGENTIC_SERVER_BIN=/path/to/agentic-server node scripts/gateway-integration.js
-```
-
-That check verifies streaming, same-socket continuation and durable continuation after reconnect. It does not test live model quality, search-provider credentials, Slack installation, or Chromium rendering.
-
-## License and attribution
-
-[Apache-2.0](LICENSE). The original Slack bridge and helpers are adapted from EmbeddedLLM's Slack Pi Agent. See [NOTICE](NOTICE) for source commits and the modifications made here.
+[Apache-2.0](LICENSE). Attribution and upstream source commits are recorded in [NOTICE](NOTICE).

@@ -1,0 +1,16 @@
+:root {
+  --vp-c-brand-1: #087f8c;
+  --vp-c-brand-2: #1098a4;
+  --vp-c-brand-3: #087f8c;
+  --vp-c-brand-soft: rgba(8, 127, 140, 0.12);
+  --vp-home-hero-name-color: #087f8c;
+}
+.dark {
+  --vp-c-brand-1: #60d5d5;
+  --vp-c-brand-2: #82e0df;
+  --vp-c-brand-3: #168f99;
+  --vp-home-hero-name-color: #60d5d5;
+}
+.VPHomeHero .text { max-width: 740px; }
+.VPHomeHero .tagline { max-width: 680px; }
+.vp-doc table { width: 100%; }

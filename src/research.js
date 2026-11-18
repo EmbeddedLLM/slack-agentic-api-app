@@ -15,8 +15,11 @@ function sectionTopics(plan) {
 
 // Progress is durable only after a complete response. Resume repeats the interrupted
 // section; it never skips work merely because partial text was streamed.
-export async function executeResearch({ client, runsDir, plan, resume = '', signal, onProgress = () => {}, scrub = value => value }) {
+export async function executeResearch({ client, runsDir, plan, resume = '', signal, onProgress = () => {}, scrub = value => value, tools = 'web_search', multiAgent = null, vectorStoreIds = [] }) {
   const fingerprint = scopeKey([client.url, client.model]);
+  const allowedTools = gatewayTools(tools, [], vectorStoreIds).map(tool => tool.type);
+  if (!allowedTools.includes('web_search')) throw new AgenticError('Research requires web_search permission.');
+  let execution = { tools: allowedTools, multiAgent, vectorStoreIds: allowedTools.includes('file_search') ? vectorStoreIds : [] };
   let checkpoint;
   let runDir;
   if (resume) {
@@ -30,9 +33,14 @@ export async function executeResearch({ client, runsDir, plan, resume = '', sign
     }
     runDir = path.dirname(resume);
     plan = checkpoint.plan;
+    execution = checkpoint.execution || { tools: ['web_search'], multiAgent: null };
+    if (execution.tools.some(tool => !allowedTools.includes(tool)) || (execution.vectorStoreIds || []).some(id => !vectorStoreIds.includes(id)) || (execution.multiAgent &&
+      (!multiAgent || execution.multiAgent.max_concurrent_subagents > multiAgent.max_concurrent_subagents))) {
+      throw new AgenticError('This research requires tools or multi-agent permissions that are no longer allowed. Start a new plan.');
+    }
   } else {
     runDir = path.join(runsDir, `${Date.now()}-${randomUUID()}`);
-    checkpoint = { version: 1, gateway: fingerprint, plan, topics: sectionTopics(plan), sections: [], previousResponseId: null };
+    checkpoint = { version: 1, gateway: fingerprint, execution, plan, topics: sectionTopics(plan), sections: [], previousResponseId: null };
   }
   mkdirSync(runDir, { recursive: true, mode: 0o700 });
   const checkpointPath = path.join(runDir, 'checkpoint.partial.json');
@@ -43,10 +51,14 @@ export async function executeResearch({ client, runsDir, plan, resume = '', sign
     checkAbort();
     const response = await client.respond({
       input, tools, store: true, previousResponseId: checkpoint.previousResponseId,
-      signal, instructions: INSTRUCTIONS,
+      signal, instructions: INSTRUCTIONS + (execution.tools.includes('code_interpreter') ? ' Python calculations run in fresh gateway sandboxes; inline input data and print results. No files or network are available in the interpreter.' : ''),
+      multiAgent: execution.multiAgent,
       maxToolCalls: { quick: 4, standard: 8, deep: 12 }[plan.depth] || 8,
       onEvent: event => {
         if (event.type === 'response.web_search_call.searching') onProgress('Searching sources…');
+        if (event.type === 'response.file_search_call.searching') onProgress('Searching the knowledge base…');
+        if (event.type === 'response.code_interpreter_call.interpreting') onProgress('Running Python analysis…');
+        if (event.agent?.agent_name?.startsWith('/root/')) onProgress('Agents researching and checking evidence…');
       },
     });
     checkAbort();
@@ -58,9 +70,10 @@ export async function executeResearch({ client, runsDir, plan, resume = '', sign
       `Research question: ${plan.question}`,
       `Approved notes: ${JSON.stringify(plan.answers || [])}`,
       `Research this section now: ${checkpoint.topics[i]}`,
+      ...(execution.multiAgent ? ['Delegate independent evidence checks to subagents and consolidate their findings.'] : []),
       'Use web search to obtain evidence. Prefer primary sources. Write detailed notes with source links and uncertainties.',
       'Report only findings supported by the retrieved evidence. If search is unavailable, say so.',
-    ].join('\n'), gatewayTools('web_search', plan.domains || []));
+    ].join('\n'), gatewayTools(execution.tools.join(','), plan.domains || [], execution.vectorStoreIds || []));
     const searches = response.output.filter(item => item.type === 'web_search_call' && item.status === 'completed');
     const sources = searches.flatMap(item => item.action?.sources || []).filter(source => /^https?:\/\//i.test(source.url));
     if (!searches.length || !sources.length) throw new AgenticError('The research did not retrieve any web sources. Check the gateway search provider and model tool calling, then resume.');

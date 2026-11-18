@@ -9,3 +9,12 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+# Local source gateway, build artifacts, and private runtime state
+.runtime/
+
+# Documentation build and machine-specific service unit
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/.vitepress/.temp/
+deploy/*.local.service

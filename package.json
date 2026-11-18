@@ -5,16 +5,49 @@
   "type": "module",
   "private": true,
   "license": "Apache-2.0",
-  "repository": { "type": "git", "url": "https://github.com/EmbeddedLLM/slack-agentic-api-app.git" },
-  "engines": { "node": ">=22.15" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EmbeddedLLM/slack-agentic-api-app.git"
+  },
+  "engines": {
+    "node": ">=22.15"
+  },
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js && node --check src/agentic-client.js && node --check src/research.js && node --check list-users.js && node --check check-files.js",
-    "test": "npm run check && node --test test/*.test.js && node --import ./test/e2e/setup.mjs test/e2e/help.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/research.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/chat.test.mjs",
+    "check": "node --check index.js && node --check src/agentic-client.js && node --check src/research.js && node --check src/steering.js && node --check list-users.js && node --check check-files.js && node --check src/knowledge-client.js && node --check scripts/knowledge.js && node --check scripts/run-gateway.js && node --check scripts/print-user-service.js && node --check src/sticker.js && node --check src/sticker-worker.js && node --check scripts/gateway-integration.js && node --check scripts/sticker-smoke.js && node --check src/sticker-image.js",
+    "test": "npm run check && node --test test/*.test.js && node --import ./test/e2e/setup.mjs test/e2e/help.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/research.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/chat.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/capabilities.test.mjs",
     "users": "node list-users.js",
     "check-files": "node check-files.js",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "service:print": "node scripts/print-user-service.js",
+    "gateway:install": "bash scripts/install-gateway.sh",
+    "gateway:start": "node scripts/run-gateway.js",
+    "knowledge": "node scripts/knowledge.js",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "sticker:smoke": "node scripts/sticker-smoke.js"
   },
-  "dependencies": { "@slack/bolt": "^4.7.3", "dotenv": "^16.6.1", "ws": "^8.18.3" },
-  "optionalDependencies": { "md-to-pdf": "5.2.5", "officeparser": "8.8.0" }
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@slack/bolt": "^4.7.3",
+    "dotenv": "^16.6.1",
+    "gifenc": "^1.0.3",
+    "saxes": "^6.0.0",
+    "sharp": "^0.35.5",
+    "ws": "^8.18.3"
+  },
+  "optionalDependencies": {
+    "md-to-pdf": "5.2.5",
+    "officeparser": "8.8.0"
+  },
+  "devDependencies": {
+    "omggif": "^1.0.10",
+    "vitepress": "1.6.4"
+  },
+  "overrides": {
+    "vitepress": {
+      "vite": "^6.4.6"
+    }
+  }
 }
