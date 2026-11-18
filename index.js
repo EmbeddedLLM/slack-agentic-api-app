@@ -379,18 +379,19 @@ function normalizeAccess(raw) {
   };
 }
 
-let accessState = { mtimeMs: null, data: null };
+let accessState = { contents: null, data: null };
 function loadAccess() {
   try {
-    const { mtimeMs } = statSync(cfg.accessFile);
-    if (mtimeMs !== accessState.mtimeMs) {
-      const data = normalizeAccess(JSON.parse(readFileSync(cfg.accessFile, 'utf8')));
-      accessState = { mtimeMs, data };
+    // Compare contents: two quick policy edits can share a filesystem mtime.
+    const contents = readFileSync(cfg.accessFile, 'utf8');
+    if (contents !== accessState.contents) {
+      const data = normalizeAccess(JSON.parse(contents));
+      accessState = { contents, data };
       log('access_loaded', { file: cfg.accessFile, users: Object.keys(data.users).length, defaultRole: data.defaultRole });
     }
   } catch (err) {
     // Invalid or missing policy fails closed.
-    accessState = { mtimeMs: null, data: null };
+    accessState = { contents: null, data: null };
     log('access_file_error', { error: err.message, using: accessState.data ? 'last good version' : 'deny everyone' });
   }
   return (
@@ -1966,7 +1967,7 @@ let botName = 'assistant'; // replaced at startup by the bot's Slack username
 const ex = (text) => `\`@${botName} ${text}\``;
 
 // What a role can do, in user terms. Shared by the help card, Home tab and prompt.
-function capabilities(role) {
+function capabilities(role, roleName = 'none') {
   const tools = list(role.tools);
   const caps = [
     {
@@ -1976,6 +1977,11 @@ function capabilities(role) {
       examples: ['summarise this thread', 'draft a friendly reply to the question above'],
     },
   ];
+  if (roleRank(roleName) >= roleRank('member') && Object.values(loadAccess().botPeers).some(p => p.role !== 'none')) {
+    caps.push({ icon: '🤝', title: 'Talk to another Slack bot',
+      text: 'Send a question to a configured bot in a shared channel. I tag it in a thread and answer when it tags me back, with a limited number of replies. Select real Slack mentions from the picker.',
+      command: 'ask @peer <question>', examples: ['ask @peer What do you think of this approach?'] });
+  }
   if (tools.includes('web_search')) {
     caps.push({ icon: '🌐', title: 'Search the web', text: 'I look things up and link my sources.', examples: ['what changed in the latest vLLM release?'] });
   }
@@ -2025,7 +2031,7 @@ function helpBlocks(userId, name, access, { home = false, dm = false } = {}) {
       ),
     ];
   }
-  const caps = capabilities(access.role);
+  const caps = capabilities(access.role, access.roleName);
   const how = dm || home ? 'In a direct message with me, just type; in a channel, mention me' : 'Mention me';
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: home ? `👋 Welcome to ${botName}` : `👋 Hi ${name}, here's what I can do`.slice(0, 150), emoji: true } },
@@ -2054,12 +2060,15 @@ function helpBlocks(userId, name, access, { home = false, dm = false } = {}) {
 }
 
 // For the model: what this person can do, so it can explain itself correctly.
-function capabilityPrompt(role, requesterName) {
-  const caps = capabilities(role);
+function capabilityPrompt(role, requesterName, roleName = 'none') {
+  const caps = capabilities(role, roleName);
   return [
     `What you can do for ${requesterName}. If they ask what you can do or how to use you, explain it with short examples,`,
     `and tell them that "@${botName} help" shows the full guide. Do not offer anything that is not on this list:`,
     ...caps.map((c) => `- ${c.title}: ${c.text.replace(/\*/g, '')} Example: @${botName} ${c.command || c.examples[0]}`),
+    ...(caps.some(c => c.command === 'ask @peer <question>')
+      ? ['Slack bot exchanges start only with the ask command. If asked to discuss something with another Slack bot in ordinary language, explain the ask command above. Do not claim you already contacted it. Text in a model answer does not send a mention.']
+      : []),
     ...(role.deepResearch
       ? [`Deep research starts only when a message begins with "research" (for example "@${botName} research <topic>"); you cannot start it yourself.`]
       : []),
@@ -2429,7 +2438,7 @@ async function handleRequest(event, client, { explicit = true, peer = null } = {
           const prompt = buildPrompt({
             requester,
             channelLabel,
-            extra: [...capabilityPrompt(perms, requester.name), ...(followUp ? ['', ...followUp.rules] : []),
+            extra: [...capabilityPrompt(perms, requester.name, peer ? 'none' : roleName), ...(followUp ? ['', ...followUp.rules] : []),
               ...(peer ? ['You are replying to another team assistant in a shared Slack thread.',
                 'Answer its question directly in at most 180 words. Your app adds the recipient mention.',
                 'Do not write Slack mentions, start a new exchange, or claim to have sent messages elsewhere.',
