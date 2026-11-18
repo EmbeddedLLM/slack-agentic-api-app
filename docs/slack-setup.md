@@ -49,6 +49,8 @@ The CLI prints `Updated app icon` when Slack accepts the upload. Substitute your
 
 The manifest subscribes to mentions, channel/private-channel/DM/group-DM messages, and Home tab events. By default, only mentions and direct messages trigger answers. `THREAD_FOLLOW=true` enables untagged messages in threads the bot has answered, subject to access checks.
 
+Replies stay in the request's thread, including greetings, help, status messages, and access notices. A top-level request starts a thread; a reply in an existing thread stays there. Simple greetings such as `hi`, `hello`, and `hey`, or a bare mention, receive a short greeting. Ask `help` or `what can you do` to see the full capability guide.
+
 The app uses `conversations.history` / `conversations.replies` for context, `users.info` for names and timezones, and authenticated Slack file downloads. [Slack's thread API documentation](https://docs.slack.dev/reference/methods/conversations.replies/) lists required history scopes. `npm run check-files -- F01234567` diagnoses file scopes for an existing file. `npm run users` lists member IDs; `npm run users -- --init` produces a starter access list (review it before adopting it: it grants members access).
 
 Try these after startup:

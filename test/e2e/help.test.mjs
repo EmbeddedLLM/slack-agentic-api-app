@@ -9,7 +9,7 @@ const waitForAnswer = (i) => until(() => since(i).some((c) => c.m === 'chat.upda
 let i = calls.length;
 await bot.mention('UMEM', 'help');
 let card = since(i).find((c) => c.m === 'chat.postEphemeral');
-ok(card && card.a.user === 'UMEM' && card.a.blocks, 'member help -> private card');
+ok(card && card.a.user === 'UMEM' && card.a.blocks && card.a.thread_ts === bot.lastTs, 'member help -> private card in the request thread');
 ok(/Search the web/.test(J(card.a.blocks)) && /Read your files/.test(J(card.a.blocks)) && /Make files/.test(J(card.a.blocks)), 'member card: web search, reading and making files');
 ok(!/Deep research/.test(J(card.a.blocks)) && !/team workspace/.test(J(card.a.blocks)), 'member card: no deep research, no workspace tools');
 ok(/@test-bot summarise this thread/.test(J(card.a.blocks)) && /Your role: \*member\*/.test(J(card.a.blocks)), 'examples use the bot name; role is shown');
@@ -22,7 +22,7 @@ ok(/Deep research/.test(J(card.a.blocks)) && /@test-bot research <topic>/.test(J
 
 i = calls.length;
 await bot.mention('UADMIN', '');
-ok(since(i).some((c) => c.m === 'chat.postEphemeral' && /here's what I can do/.test(J(c.a.blocks))), 'a bare mention shows the help card');
+ok(since(i).some((c) => c.m === 'chat.postMessage' && c.a.thread_ts === bot.lastTs && c.a.text === 'Hi Ada Admin! How can I help?' && !c.a.blocks), 'a bare mention gets a short threaded greeting');
 
 i = calls.length;
 await bot.mention('UNOBODY', 'help');
@@ -32,7 +32,13 @@ ok(/don't have access/.test(J(card.a.blocks)) && /UNOBODY/.test(J(card.a.blocks)
 i = calls.length;
 await bot.dm('UMEM', 'hi');
 const dm = since(i).find((c) => c.m === 'chat.postMessage');
-ok(dm && dm.a.channel === 'D0DM' && /In a direct message with me, just type/.test(J(dm.a.blocks)), 'DM "hi" -> visible help, worded for DMs');
+ok(dm && dm.a.channel === 'D0DM' && dm.a.thread_ts === bot.lastTs && dm.a.text === 'Hi Mo Member! How can I help?' && !dm.a.blocks, 'DM "hi" -> brief greeting in its thread');
+const dmThread = bot.lastTs;
+i = calls.length;
+await bot.dm('UMEM', 'help', dmThread);
+const dmHelp = since(i).find((c) => c.m === 'chat.postMessage');
+ok(dmHelp?.a.thread_ts === dmThread && /In a direct message with me, just type/.test(J(dmHelp.a.blocks)), 'explicit DM help shows the guide in the existing thread');
+ok(bot.agentCalls().length === 0, 'greetings and help do not invoke the model');
 
 i = calls.length;
 await app.h.event.app_home_opened({ event: { type: 'app_home_opened', user: 'UADMIN', tab: 'home' }, client });
@@ -66,5 +72,6 @@ for (const q of ['hello there friend', 'give me an in-depth comparison of vector
 const tips = calls.filter((c) => c.m === 'chat.postEphemeral' && c.a.user === 'UADMIN' && /report with cited sources/.test(c.a.text || ''));
 ok(tips.length === 2 && /@test-bot research <your question>/.test(tips[0].a.text), 'admin asking for an in-depth report -> research tip (at most twice)');
 ok(/you cannot start it yourself/.test(bot.agentCalls().pop().prompt), 'admin prompt explains how deep research is started');
+ok(calls.filter(c => ['chat.postMessage', 'chat.postEphemeral'].includes(c.m)).every(c => c.a.thread_ts && !c.a.reply_broadcast), 'greetings, help, and tips never post outside a thread');
 
 finish();

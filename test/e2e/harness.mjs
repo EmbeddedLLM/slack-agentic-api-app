@@ -77,7 +77,11 @@ export async function startBot(extraEnv = {}) {
       bot.lastTs = event.ts;
       return app.h.event.app_mention({ event, client });
     },
-    dm(user, text) { return app.h.event.message({ event: { type: 'message', channel_type: 'im', user, text, channel: 'D0DM', ts: `${2000 + ++n}.000200` }, client }); },
+    dm(user, text, thread) {
+      const event = { type: 'message', channel_type: 'im', user, text, channel: 'D0DM', ts: `${2000 + ++n}.000200`, ...(thread ? { thread_ts: thread } : {}) };
+      bot.lastTs = event.ts;
+      return app.h.event.message({ event, client });
+    },
     click(id, value, user = 'UADMIN', messageTs) {
       return app.h.action[id]({ ack: async () => {}, body: { user: { id: user }, channel: { id: 'C0TEST' }, trigger_id: 'T1', message: { ts: messageTs } }, action: { value }, client });
     },

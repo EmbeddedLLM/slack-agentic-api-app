@@ -424,7 +424,7 @@ function describeAccess(userId, a) {
 }
 
 const ephemeral = (client, channel, user, threadTs, text) =>
-  client.chat.postEphemeral({ channel, user, thread_ts: threadTs, text }).catch(() => {});
+  threadTs ? client.chat.postEphemeral({ channel, user, thread_ts: threadTs, text }).catch(() => {}) : Promise.resolve();
 
 const WHOAMI_RE = /^(whoami|who am i\??|my access|my role)$/i;
 
@@ -1830,13 +1830,9 @@ function registerResearchHandlers(app) {
     await ack();
     const p = plans.get(action.value);
     if (!p) {
-      await client.chat
-        .postEphemeral({
-          channel: body.channel?.id,
-          user: body.user?.id,
-          text: 'This plan is no longer available (it expired or the bot restarted). Ask again to make a new one.',
-        })
-        .catch(() => {});
+      await ephemeral(client, body.channel?.id, body.user?.id,
+        body.message?.thread_ts || body.message?.ts || body.container?.message_ts,
+        'This plan is no longer available (it expired or the bot restarted). Ask again to make a new one.');
       return null;
     }
     return { p, userId: body.user?.id };
@@ -1942,15 +1938,17 @@ setInterval(cleanOldResearch, 24 * 3_600_000).unref();
 
 // ---------------------------------------------------------------------------
 // Help: what can I do, and how to ask for it
-//   - "@bot help" (or "what can you do", "hi", ...) -> a card listing what *this*
+//   - "@bot help" (or "what can you do", ...) -> a card listing what *this*
 //     person's role allows, each with an example to copy. Only they see it.
+//   - Greetings and bare mentions receive a short reply in the request's thread.
 //   - The app's Home tab shows the same guide (event app_home_opened).
 //   - The model gets the same list, so "can you make a PDF?" is answered right.
 //   - One-time tips: on someone's first answer, and when an admin asks for an
 //     in-depth report without the research command.
 // ---------------------------------------------------------------------------
 const HELP_RE =
-  /^(?:help|\?|commands|menu|guide|usage|hi|hello|hey|what can you do|what do you do|what can i ask(?: you)?|what are your (?:features|commands|capabilities)|how (?:do i|to|can i) use (?:you|this|the bot|it))[?!. ]*$/i;
+  /^(?:help|\?|commands|menu|guide|usage|what can you do|what do you do|what can i ask(?: you)?|what are your (?:features|commands|capabilities)|how (?:do i|to|can i) use (?:you|this|the bot|it))[?!. ]*$/i;
+const GREETING_RE = /^(?:hi|hello|hey)(?: there)?[?!. ]*$/i;
 let botName = 'assistant'; // replaced at startup by the bot's Slack username
 const ex = (text) => `\`@${botName} ${text}\``;
 
@@ -2060,13 +2058,21 @@ async function sendHelp(client, event, access) {
   const dm = event.channel_type === 'im' || event.channel?.startsWith('D');
   const blocks = helpBlocks(event.user, name, access, { dm });
   const text = `Here's what I can do. Mention @${botName} with your request.`;
+  const threadTs = event.thread_ts || event.ts;
   try {
-    if (dm) await client.chat.postMessage({ channel: event.channel, thread_ts: event.thread_ts, text, blocks });
-    else await client.chat.postEphemeral({ channel: event.channel, user: event.user, thread_ts: event.thread_ts, text, blocks });
+    if (dm) await client.chat.postMessage({ channel: event.channel, thread_ts: threadTs, text, blocks });
+    else await client.chat.postEphemeral({ channel: event.channel, user: event.user, thread_ts: threadTs, text, blocks });
   } catch (err) {
     log('help_failed', { error: err.data?.error || err.message });
   }
   log('help', { user: event.user, role: access.roleName });
+}
+
+async function sendGreeting(client, event, access) {
+  const threadTs = event.thread_ts || event.ts;
+  if (!access.role.use) return ephemeral(client, event.channel, event.user, threadTs, describeAccess(event.user, access));
+  const name = escapeSlack((await getUser(client, event.user)).name);
+  await client.chat.postMessage({ channel: event.channel, thread_ts: threadTs, text: `Hi ${name}! How can I help?` });
 }
 
 async function publishHome(client, userId) {
@@ -2144,7 +2150,7 @@ const MULTI_RE = /^multi(?:[ -]agent)?(?:\s+|$)([\s\S]*)$/i;
 const STEER_RE = /^steer(?:\s+|$)([\s\S]*)$/i;
 
 async function steerRequest(event, client, update, access) {
-  const say = text => ephemeral(client, event.channel, event.user, event.thread_ts, text);
+  const say = text => ephemeral(client, event.channel, event.user, event.thread_ts || event.ts, text);
   if (!update.trim()) return say('Use `steer <update>` in the thread of your running request.');
   if (event.files?.length) return say('Steering accepts text updates. Send attachments with a new request.');
   const job = [...jobs.values()].find(j => j.channel === event.channel && j.threadTs === event.thread_ts && j.state === 'running');
@@ -2179,13 +2185,13 @@ async function handleRequest(event, client, { explicit = true } = {}) {
   const userText = (multiCmd ? multiCmd[1].trim() : typed) || 'Please look at the attached file(s).';
 
   if (explicit && WHOAMI_RE.test(typed)) {
-    await ephemeral(client, channel, event.user, event.thread_ts, describeAccess(event.user, await resolveAccess(client, event.user, channel)));
+    await ephemeral(client, channel, event.user, threadTs, describeAccess(event.user, await resolveAccess(client, event.user, channel)));
     return;
   }
 
-  // "help", "what can you do", "hi", or a bare mention: the guide for this person's role.
-  if (!typed && !event.files?.length) {
-    if (explicit) await sendHelp(client, event, await resolveAccess(client, event.user, channel));
+  // Greetings stay brief; the full guide is only sent when explicitly requested.
+  if ((!typed || GREETING_RE.test(typed)) && !event.files?.length) {
+    if (explicit) await sendGreeting(client, event, await resolveAccess(client, event.user, channel));
     return;
   }
   if (explicit && HELP_RE.test(typed)) {
@@ -2201,7 +2207,7 @@ async function handleRequest(event, client, { explicit = true } = {}) {
         client,
         channel,
         event.user,
-        event.thread_ts,
+        threadTs,
         `Sorry, you don't have access to this assistant yet. Your Slack member ID is \`${event.user}\`; send it to an admin to be added.`
       );
     }
@@ -2211,9 +2217,9 @@ async function handleRequest(event, client, { explicit = true } = {}) {
   const steerCmd = explicit ? STEER_RE.exec(typed) : null;
   if (steerCmd) return steerRequest(event, client, steerCmd[1], access);
   if (multiCmd && (!cfg.multiAgentEnabled || !access.role.multiAgent)) {
-    return ephemeral(client, channel, event.user, event.thread_ts, 'Your role cannot start multi-agent requests. Ask an admin to enable multiAgent for your role.');
+    return ephemeral(client, channel, event.user, threadTs, 'Your role cannot start multi-agent requests. Ask an admin to enable multiAgent for your role.');
   }
-  if (multiCmd && !multiCmd[1].trim()) return ephemeral(client, channel, event.user, event.thread_ts, 'Use `multi <task>`, for example `multi compare these three approaches`.');
+  if (multiCmd && !multiCmd[1].trim()) return ephemeral(client, channel, event.user, threadTs, 'Use `multi <task>`, for example `multi compare these three approaches`.');
 
   const maxJobs = access.role.maxJobs ?? cfg.maxJobsPerUser;
   if (userJobCount(event.user) >= maxJobs) {
@@ -2221,7 +2227,7 @@ async function handleRequest(event, client, { explicit = true } = {}) {
       client,
       channel,
       event.user,
-      event.thread_ts,
+      threadTs,
       `You already have ${maxJobs} request(s) running or queued. Please wait for one to finish.`
     );
     return;
@@ -2237,23 +2243,23 @@ async function handleRequest(event, client, { explicit = true } = {}) {
     if (researchCmd) {
       const request = researchCmd[1].trim();
       if (!request && !event.thread_ts) {
-        await ephemeral(client, channel, event.user, event.thread_ts, 'Tell me what to research, for example: `research the main open-source vector databases and how they compare`.');
+        await ephemeral(client, channel, event.user, threadTs, 'Tell me what to research, for example: `research the main open-source vector databases and how they compare`.');
         return;
       }
       if (event.thread_ts && researchRunning(channel, event.thread_ts)) {
-        await ephemeral(client, channel, event.user, event.thread_ts, 'A research is already running in this thread. Wait for it to finish, or cancel it.');
+        await ephemeral(client, channel, event.user, threadTs, 'A research is already running in this thread. Wait for it to finish, or cancel it.');
         return;
       }
       return planResearch(event, client, { request: request || 'The topic discussed in this thread.' });
     }
   } else if (researchCmd && researchCmd[1].trim()) {
-    await ephemeral(client, channel, event.user, event.thread_ts, "Deep research is only available to admins, so I'll answer this as a normal question.");
+    await ephemeral(client, channel, event.user, threadTs, "Deep research is only available to admins, so I'll answer this as a normal question.");
   }
 
   // A research holds this thread's lock for a long time; don't queue behind it.
   if (event.thread_ts && researchRunning(channel, event.thread_ts)) {
     if (explicit) {
-      await ephemeral(client, channel, event.user, event.thread_ts, 'A research is running in this thread. Ask me again when it has finished, or ask in a new thread.');
+      await ephemeral(client, channel, event.user, threadTs, 'A research is running in this thread. Ask me again when it has finished, or ask in a new thread.');
     }
     return;
   }

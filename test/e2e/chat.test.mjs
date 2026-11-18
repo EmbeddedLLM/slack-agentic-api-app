@@ -56,4 +56,5 @@ writeFileSync(path.join(bot.dir, 'access.json'), '{invalid');
 const before = bot.gateway.requests.length;
 await bot.mention('UMEM', 'after invalid access edit');
 ok(bot.gateway.requests.length === before, 'invalid access policy fails closed');
+ok(bot.calls.filter(c => ['chat.postMessage', 'chat.postEphemeral'].includes(c.m)).every(c => c.a.thread_ts && !c.a.reply_broadcast), 'answers, chunks, and access notices stay in threads');
 finish();
