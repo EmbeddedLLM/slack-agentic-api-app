@@ -59,6 +59,6 @@ Try these after startup:
 - `@bot whoami` — your role and member ID.
 - `@bot summarise this thread` — contextual reply.
 - Attach a `.txt` file and ask `@bot summarise the attachment`.
-- As an admin, `@bot research <question>` — edit the plan, then press **Start research**.
+- With deep-research access, `@bot research <question>` — edit the plan, then press **Start research**.
 
 Cancellation is restricted to the requester or a role with `cancelAny`. Plan controls and research resume check current access. A pending plan expires after a day or a bot restart; completed research sections persist on disk.

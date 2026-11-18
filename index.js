@@ -1632,7 +1632,7 @@ async function planResearch(event, client, { request = '', previous = null, feed
   try {
     const text = await submitJob(job, (j) =>
       withThreadLock(threadKey(channel, threadTs), async () => {
-        if (!(await researchAccess(client, event.user, channel))) throw new UserFacingError('Only admins can use deep research.');
+        if (!(await researchAccess(client, event.user, channel))) throw new UserFacingError('Your role cannot use deep research.');
         const [history, channelLabel] = await Promise.all([
           buildHistory(client, channel, event.thread_ts || null, { exclude: new Set([event.ts, ...activePlaceholders]), sinceLastBot: false }),
           getChannelLabel(client, channel),
@@ -1794,7 +1794,7 @@ async function startResearch(client, p, userId) {
   const say = (text) => ephemeral(client, p.channel, userId, p.threadTs, text);
   if (p.status !== 'pending') return say('This plan was already started, replaced or discarded.');
   const a = await researchAccess(client, userId, p.channel);
-  if (!a) return say('Only admins can start deep research.');
+  if (!a) return say('Your role cannot start deep research.');
   if (researchRunning(p.channel, p.threadTs)) return say('A research is already running in this thread. Wait for it to finish, or cancel it.');
   const maxJobs = a.role.maxJobs ?? cfg.maxJobsPerUser;
   if (userJobCount(userId) >= maxJobs) return say(`You already have ${maxJobs} request(s) running or queued. Please wait for one to finish.`);
@@ -1837,7 +1837,7 @@ function registerResearchHandlers(app) {
     }
     return { p, userId: body.user?.id };
   };
-  const denied = (client, r) => ephemeral(client, r.p.channel, r.userId, r.p.threadTs, 'Only admins can change research plans.');
+  const denied = (client, r) => ephemeral(client, r.p.channel, r.userId, r.p.threadTs, 'Your role cannot change research plans.');
 
   app.action('research_start', async ({ ack, body, action, client }) => {
     const r = await planFor(ack, body, action, client);
@@ -1901,7 +1901,7 @@ function registerResearchHandlers(app) {
     if (!/^[CDG][A-Z0-9]+$/.test(channel) || !/^\d+\.\d+$/.test(threadTs) || body.channel?.id !== channel) return;
     const say = (text) => ephemeral(client, channel, userId, threadTs, text);
     const a = await researchAccess(client, userId, channel);
-    if (!a) return say('Only admins can resume deep research.');
+    if (!a) return say('Your role cannot resume deep research.');
     if (researchRunning(channel, threadTs)) return say('A research is already running in this thread.');
     const checkpoint = latestCheckpoint(channel, threadTs);
     if (!checkpoint) return say('There is nothing to resume in this thread any more.');
@@ -2253,7 +2253,7 @@ async function handleRequest(event, client, { explicit = true } = {}) {
       return planResearch(event, client, { request: request || 'The topic discussed in this thread.' });
     }
   } else if (researchCmd && researchCmd[1].trim()) {
-    await ephemeral(client, channel, event.user, threadTs, "Deep research is only available to admins, so I'll answer this as a normal question.");
+    await ephemeral(client, channel, event.user, threadTs, "Your role does not have deep research enabled, so I'll answer this as a normal question.");
   }
 
   // A research holds this thread's lock for a long time; don't queue behind it.

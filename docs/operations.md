@@ -14,6 +14,25 @@ The access file is checked on each request, when queued work starts and on butto
 
 Merge that entry into the full access file. It is not a complete policy on its own.
 
+### Full tools for members
+
+The example access policy gives members web search, Python execution, file uploads and generated files, GIF stickers (including image input), multi-agent requests, and deep research. Copy this role into an existing `access.json` to enable the same capabilities; edits apply on the next request:
+
+```json
+{
+  "tools": "web_search,code_interpreter",
+  "readUploads": true,
+  "createFiles": true,
+  "multiAgent": true,
+  "deepResearch": true,
+  "cancelAny": false
+}
+```
+
+This is the value of `roles.member`, not a complete access file. Steering requires no extra flag: members can use `steer <update>` in their own running standard request's thread. Multi-agent and research requests cannot be steered. Members can cancel their own work; `cancelAny` controls cancelling another user's work. Access to the member role still comes from `users` entries or `defaultRole: "member"`.
+
+The local `create_sticker` function is declared automatically when `createFiles` and `STICKERS_ENABLED` are enabled. File search additionally needs configured knowledge-base IDs. MCP servers are not configured by this member profile.
+
 `file_search` requires configured `vectorStoreIds` in the role or `AGENTIC_VECTOR_STORE_IDS`; see [files and knowledge](./files). `AGENTIC_MULTI_AGENT_ENABLED=true` allows `multi` for roles with `multiAgent:true`. `AGENTIC_MAX_CONCURRENT_SUBAGENTS=3` limits simultaneous children, not lifetime agent count or total tokens. `RESEARCH_MULTI_AGENT=true` enables delegation in authorized research. Resume rejects tools, vector stores or multi-agent permissions that have been revoked.
 
 `AGENTIC_NATIVE_FILE_INPUTS=true` sends bounded extracted text as native `input_file` data. Set it to `false` to use inline prompt text instead. PDF and Office files still require local text extraction.

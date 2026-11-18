@@ -10,9 +10,12 @@
       "maxJobs": 1
     },
     "member": {
-      "tools": "web_search",
+      "tools": "web_search,code_interpreter",
       "readUploads": true,
-      "createFiles": true
+      "createFiles": true,
+      "multiAgent": true,
+      "deepResearch": true,
+      "cancelAny": false
     },
     "admin": {
       "tools": "web_search,code_interpreter",
