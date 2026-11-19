@@ -2,6 +2,8 @@
 
 `index.js` owns Slack events, access policy, the bounded job scheduler, per-thread serialization, attachment preparation, output rendering and interactive plans. `src/agentic-client.js` owns WebSocket transport and response validation. `src/research.js` owns the research workflow and checkpoints. `src/steering.js` tracks accepted updates through successor creation; `src/knowledge-client.js` handles administrative file uploads and indexing.
 
+`scripts/start-app.js` and `src/app-runtime.js` supervise the source gateway and Slack bot together. The gateway must pass `/ready` before the bot starts. Unexpected child exits restart the pair with a rate limit; shutdown signals or a lost launcher parent clean up both process groups. vLLM runs separately. Set `MANAGE_GATEWAY=false` when another service owns the gateway.
+
 ## WebSocket contract
 
 A job connects to `AGENTIC_WS_URL`, normally `ws://127.0.0.1:9000/v1/responses`, with an optional `Authorization: Bearer …` upgrade header. Remote TLS endpoints use `wss://`. URLs with credentials, query parameters or fragments are rejected. The Node `ws` client supports the auth header; no credentials are placed in the URL.
@@ -19,7 +21,7 @@ Each turn sends one text frame:
   "stream": true,
   "max_output_tokens": 8192,
   "max_tool_calls": 12,
-  "include": ["web_search_call.action.sources"]
+  "multi_agent": {"enabled": false}
 }
 ```
 

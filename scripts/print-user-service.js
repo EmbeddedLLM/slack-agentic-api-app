@@ -10,7 +10,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=${quote(root)}
-ExecStart=${quote(process.execPath)} index.js
+ExecStart=${quote(process.execPath)} scripts/start-app.js
 Environment=NODE_ENV=production
 Restart=on-failure
 RestartSec=5

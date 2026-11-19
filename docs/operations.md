@@ -94,7 +94,7 @@ sudo systemctl enable --now slack-agentic-bot
 sudo journalctl -u slack-agentic-bot -f
 ```
 
-Run the gateway as a separate service. The bot opens outgoing Slack and gateway connections and needs no inbound listener. The systemd example assumes a minimal installation; verify Chromium sandbox support separately before enabling PDF export under service hardening.
+The service starts and supervises the source gateway and bot together by default. To use a gateway managed by another service, set `MANAGE_GATEWAY=false`. The bot opens outgoing Slack and gateway connections and needs no inbound listener. The systemd example assumes a minimal installation; verify Chromium sandbox support separately before enabling PDF export under service hardening.
 
 ## Persistence and recovery
 

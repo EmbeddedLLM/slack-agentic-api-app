@@ -22,10 +22,12 @@ cargo build --release --locked -p agentic-server --bin agentic-server \
 ```bash
 cp deploy/gateway.env.example .env.gateway
 # Edit .env.gateway to add YOU_API_KEY.
-npm run gateway:start
+# Start the gateway and Slack bot together:
+npm start
+# Or use slack run when the CLI supplies Slack credentials.
 ```
 
-The wrapper reads `.env.gateway`, removes any `SLACK_*` environment variables from the child process, and starts the built binary. Defaults:
+The combined launcher reads `.env.gateway`, removes any `SLACK_*` environment variables from the gateway child, and starts the built binary. Search-provider secrets loaded from this file are not added to the bot process. It waits for gateway and model readiness before starting the bot. `npm run gateway:start` remains available for intentionally running only the gateway; set `MANAGE_GATEWAY=false` on the bot when using that separate mode. Defaults:
 
 | Setting | Default |
 |---|---|
@@ -39,7 +41,7 @@ Only one process can bind port 9000. Keep your existing gateway running during t
 
 ### Change the model or its port
 
-Slack authentication does not depend on your model server. Change `LLM_API_BASE` in `.env.gateway` to the new model-server address, and change `AGENTIC_MODEL` in the app's `.env` to the exact served model name. Stop and restart the gateway with `npm run gateway:start`, then restart the bot with your existing `slack run --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID` command. No new Slack login or app creation is needed.
+Slack authentication does not depend on your model server. Change `LLM_API_BASE` in `.env.gateway` to the new model-server address, and change `AGENTIC_MODEL` in the app's `.env` to the exact served model name. Restart your combined `npm start` or `slack run --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID --no-activity` command; it restarts both the gateway and bot. No new Slack login or app creation is needed.
 
 `AGENTIC_WS_URL` still points to Agentic API, not the model server. Change it only when moving the gateway itself. For example: Slack app → `ws://127.0.0.1:9001/v1/responses` → gateway → model server at `http://127.0.0.1:5050`.
 
@@ -47,7 +49,7 @@ The client follows the upstream [playground](https://github.com/vllm-project/age
 
 ## Use your existing launch script
 
-A script like `gateway-run.sh` can continue to launch the gateway. Point it at the new binary and supply these variables in the gateway environment:
+For an externally managed gateway, set `MANAGE_GATEWAY=false` in the bot environment. A script like `gateway-run.sh` can then continue to launch the gateway. Point it at the new binary and supply these variables in the gateway environment:
 
 ```bash
 export AGENTIC_WEB_SEARCH_PROVIDER=you

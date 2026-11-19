@@ -25,7 +25,6 @@ chmod 600 .env.gateway
 Add your `YOU_API_KEY` to `.env.gateway`. Set the vLLM upstream if it differs from `http://127.0.0.1:5050`. Start the gateway in a terminal:
 
 ```bash
-npm run gateway:start
 ```
 
 The default endpoint is `ws://127.0.0.1:9000/v1/responses`. Use an unused port while another gateway is running. Interpreter startup requires a working systemd user manager and delegated Linux cgroup v2 controllers.
@@ -54,8 +53,9 @@ Use the exact model ID served by your vLLM. Replace the placeholder admin member
 ## 4. Verify and start
 
 ```bash
-npm run smoke
 npm start
+# In another terminal, once the gateway is ready:
+npm run smoke
 ```
 
-The smoke command sends one plain WebSocket inference request. Try `@bot help` in Slack, then `@bot multi compare these approaches` or a calculation. For a persistent service, continue to [Hosting](./hosting).
+`npm start` starts the source gateway, waits for gateway/model readiness, then starts the bot. With CLI-injected Slack credentials, use `slack run` instead; it uses the same launcher. The smoke command sends one plain WebSocket inference request. Try `@bot help` in Slack, then `@bot multi compare these approaches` or a calculation. For a persistent service, continue to [Hosting](./hosting).

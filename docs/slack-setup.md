@@ -4,7 +4,7 @@
 
 An existing `bolt-support-agent` or other Bolt app can use this project's Agentic API backend. Keep the existing app ID and workspace. There is no need to create another app or configure an Anthropic/OpenAI provider for the template.
 
-The project includes Slack CLI hooks and uses `index.js` as its entry point. After installing and authenticating the [Slack CLI](https://docs.slack.dev/tools/slack-cli/), link the app from this checkout:
+The project includes Slack CLI hooks and uses `scripts/start-app.js` to supervise the gateway and the `index.js` bot. After installing and authenticating the [Slack CLI](https://docs.slack.dev/tools/slack-cli/), link the app from this checkout:
 
 ```bash
 cd /path/to/slack-agentic-api-app
@@ -18,15 +18,14 @@ To apply changes through the CLI, save the existing manifest with your changes i
 Configure `AGENTIC_WS_URL` and `AGENTIC_MODEL` in `.env`, and add your Slack member ID as an admin in `access.json`. Then:
 
 ```bash
-npm run smoke
-slack run --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID
+slack run --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID --no-activity
 ```
 
 The CLI provides the Slack bot and app tokens to the running process. Leave the token entries in `.env` empty for this workflow. For standalone `npm start` or systemd hosting, set the persistent `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` yourself in `.env`; never paste them into chat. Run only one bridge process for the app.
 
 The CLI flow is for local development. The [hosting guide](./hosting) describes keeping the bot running as a service. Local app links and private configuration under `.slack/` are ignored by Git.
 
-The start hook uses `exec node index.js` on Linux/macOS so CLI stop and reload signals reach the bot directly. A wrapper process can otherwise leave an old Socket Mode connection running and receiving events after a reload.
+The start hook uses `exec node scripts/start-app.js` on Linux/macOS. This supervisor starts the source gateway, waits for `/ready`, then starts the bot. It forwards shutdown and reload signals to both process groups, forcibly cleans up children that do not exit, and watches for an unexpected CLI exit. `--no-activity` disables optional Slack Platform activity-log polling; Socket Mode events still arrive normally. After upgrading an older checkout to this launcher, restart the CLI once so it loads the new hook.
 
 ### App icon
 

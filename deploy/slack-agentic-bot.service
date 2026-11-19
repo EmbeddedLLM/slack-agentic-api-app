@@ -9,7 +9,7 @@ User=slack-agentic
 Group=slack-agentic
 WorkingDirectory=/opt/slack-agentic-api-app
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node index.js
+ExecStart=/usr/bin/node scripts/start-app.js
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30

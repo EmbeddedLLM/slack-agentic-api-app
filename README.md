@@ -33,7 +33,7 @@ chmod 600 .env .env.gateway access.json
 
 `gateway:install` builds **Agentic API main from source**, including `embedded-code-interpreter` and `file-search-pdf`. Source and binary live under `.runtime/agentic-api`; the installed commit is recorded in `.runtime/gateway-source-commit`.
 
-Set `YOU_API_KEY` in `.env.gateway`. Defaults match vLLM at `http://127.0.0.1:5050` and gateway port `9000`. Start the source gateway in a separate terminal with `npm run gateway:start`. If port 9000 already has a gateway, deliberately stop it or select another port first.
+Set `YOU_API_KEY` in `.env.gateway`. Defaults match vLLM at `http://127.0.0.1:5050` and gateway port `9000`. `npm start` and `slack run` start the source gateway and bot together. If the port is already occupied, stop the separate gateway or set `MANAGE_GATEWAY=false` to use it as an external service.
 
 Create the Slack app using [slack-app-manifest.json](slack-app-manifest.json); see [Slack setup](docs/slack-setup.md). Put the `xoxb-` bot token and `xapp-` app token in `.env`, set the exact served model ID, and add your Slack member ID to `access.json`. Unlisted users are denied.
 
@@ -43,8 +43,9 @@ AGENTIC_MODEL=Qwen/Qwen3.8-27B-FP8
 ```
 
 ```bash
-npm run smoke
 npm start
+# In another terminal, once the gateway is ready:
+npm run smoke
 ```
 
 Slack Socket Mode needs **no public URL or inbound listener**. Keep the gateway private, or use `wss://` and gateway authentication for a remote connection.

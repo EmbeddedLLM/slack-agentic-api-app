@@ -2,16 +2,22 @@
   "hooks": {
     "get-hooks": "npx -q --no-install -p @slack/cli-hooks slack-cli-get-hooks",
     "get-manifest": "node scripts/slack-manifest.js",
-    "start": "exec node index.js"
+    "start": "exec node scripts/start-app.js"
   },
   "config": {
     "watch": {
       "app": {
-        "paths": ["index.js", "src/"],
+        "paths": [
+          "index.js",
+          "src/",
+          "scripts/start-app.js"
+        ],
         "filter-regex": "\\.js$"
       },
       "manifest": {
-        "paths": ["slack-app-manifest.json"]
+        "paths": [
+          "slack-app-manifest.json"
+        ]
       }
     }
   }
