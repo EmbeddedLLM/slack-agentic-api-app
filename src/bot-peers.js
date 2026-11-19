@@ -31,8 +31,25 @@ export function normalizeBotPeers(raw = {}) {
 
 export const peerInChannel = (peer, channel) => Boolean(peer && /^[CG]/.test(channel) && (!peer.channels || peer.channels.includes(channel)));
 
+// Only real, unquoted Slack mentions route a request. Questions merely about
+// another bot and negated instructions stay with the assistant as normal chat.
+export function parsePeerRequest(text, peers) {
+  const unquoted = text.replace(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g, '');
+  const lead = /^(?:(?:please|can you|could you|would you)\s+)*(?:ask|tell|message|talk|chat|discuss|debate|brainstorm|collaborate|coordinate|consult|work|continue|review|analy[sz]e|compare|check|say)\b/i;
+  if (!lead.test(unquoted.trim())) return null;
+  const mentions = [...unquoted.matchAll(/<@([UW][A-Z0-9]+)>/g)];
+  if (!mentions.length) return null;
+  const prefix = unquoted.slice(0, mentions[0].index);
+  if (/\b(?:not|never|without|avoid|stop|don['’]t|can['’]t|shouldn['’]t)\b/i.test(prefix)) return null;
+  const legacy = /^ask\s+<@([UW][A-Z0-9]+)>(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  const userIds = [...new Set(mentions.map(match => match[1]).filter(id => Object.hasOwn(peers, id) || id === legacy?.[1]))];
+  if (!userIds.length) return null;
+  if (userIds.length !== 1) return { error: 'Mention one other bot at a time so I know who should receive the request.' };
+  return { userId: userIds[0], question: legacy ? (legacy[2] || '').trim() : text.trim(), relayRequest: !legacy };
+}
+
 // Reserve before awaiting anything or calling the gateway. The counter and
-// event IDs survive restarts. Only an authorized human's ask command resets it.
+// event IDs survive restarts. Only an authorized human's peer request resets it.
 export class PeerReplyBudget {
   constructor(dir) { this.dir = dir; }
 

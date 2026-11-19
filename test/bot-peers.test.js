@@ -3,9 +3,26 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { normalizeBotPeers, peerInChannel, PeerReplyBudget } from '../src/bot-peers.js';
+import { normalizeBotPeers, parsePeerRequest, peerInChannel, PeerReplyBudget } from '../src/bot-peers.js';
 
 const peer = normalizeBotPeers({ UPEER: { botId: 'BPEER' } }).UPEER;
+
+test('natural peer requests keep the whole task and require actual unquoted peer mentions', () => {
+  const peers = { UPEER: peer, UOTHER: { botId: 'BOTHER' } };
+  for (const text of ['discuss with <@UPEER> about pets', 'talk to <@UPEER> about caching',
+    'please brainstorm with <@UPEER> some ideas', 'can you please debate with <@UPEER> both approaches',
+    'discuss the RFC with <@UPEER>', 'tell <@UPEER> what <@UHUMAN> proposed']) {
+    assert.deepEqual(parsePeerRequest(text, peers), { userId: 'UPEER', question: text, relayRequest: true });
+  }
+  assert.deepEqual(parsePeerRequest('ask <@UPEER> What do you think?', peers), { userId: 'UPEER', question: 'What do you think?', relayRequest: false });
+  assert.equal(parsePeerRequest('ask <@UUNKNOWN> question', peers).userId, 'UUNKNOWN');
+  for (const text of ['who is <@UPEER>?', 'discuss with @latte-ai about pets', 'review <@UHUMAN>\'s proposal',
+    'discuss with `<@UPEER>` about pets', 'discuss this example: ```<@UPEER>```',
+    'do not talk to <@UPEER>', 'please discuss this without contacting <@UPEER>']) {
+    assert.equal(parsePeerRequest(text, peers), null, text);
+  }
+  assert.match(parsePeerRequest('discuss with <@UPEER> and <@UOTHER>', peers).error, /one other bot/);
+});
 
 test('peer policy pins identities and rejects administrative or unbounded access', () => {
   assert.equal(peer.role, 'viewer');

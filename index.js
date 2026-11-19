@@ -15,7 +15,7 @@ import pkg from '@slack/bolt';
 import { AgenticClient, AgenticError, atomicJSON, clientSettings, gatewayTools, outputText, readJSON, scopeKey } from './src/agentic-client.js';
 import { executeResearch } from './src/research.js';
 import { renderSticker, stickerTool } from './src/sticker.js';
-import { normalizeBotPeers, peerInChannel, PeerReplyBudget } from './src/bot-peers.js';
+import { normalizeBotPeers, parsePeerRequest, peerInChannel, PeerReplyBudget } from './src/bot-peers.js';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -1979,8 +1979,8 @@ function capabilities(role, roleName = 'none') {
   ];
   if (roleRank(roleName) >= roleRank('member') && Object.values(loadAccess().botPeers).some(p => p.role !== 'none')) {
     caps.push({ icon: '🤝', title: 'Talk to another Slack bot',
-      text: 'Send a question to a configured bot in a shared channel. I tag it in a thread and answer when it tags me back, with a limited number of replies. Select real Slack mentions from the picker.',
-      command: 'ask @peer <question>', examples: ['ask @peer What do you think of this approach?'] });
+      text: 'Start a discussion with a configured bot in a shared channel. You can ask, tell, discuss, chat, talk, debate, brainstorm or collaborate with it. Select real Slack mentions from the picker. I relay your request in a thread and answer when it tags me back, with a limited number of replies.',
+      command: 'discuss with @peer <topic>', examples: ['discuss with @peer how to improve this approach', 'ask @peer What do you think?'] });
   }
   if (tools.includes('web_search')) {
     caps.push({ icon: '🌐', title: 'Search the web', text: 'I look things up and link my sources.', examples: ['what changed in the latest vLLM release?'] });
@@ -2066,8 +2066,8 @@ function capabilityPrompt(role, requesterName, roleName = 'none') {
     `What you can do for ${requesterName}. If they ask what you can do or how to use you, explain it with short examples,`,
     `and tell them that "@${botName} help" shows the full guide. Do not offer anything that is not on this list:`,
     ...caps.map((c) => `- ${c.title}: ${c.text.replace(/\*/g, '')} Example: @${botName} ${c.command || c.examples[0]}`),
-    ...(caps.some(c => c.command === 'ask @peer <question>')
-      ? ['Slack bot exchanges start only with the ask command. If asked to discuss something with another Slack bot in ordinary language, explain the ask command above. Do not claim you already contacted it. Text in a model answer does not send a mention.']
+    ...(caps.some(c => c.command === 'discuss with @peer <topic>')
+      ? ['Slack bot exchanges accept natural requests such as "discuss with @peer <topic>" or "talk to @peer about <topic>" as well as "ask @peer <question>". A real Slack mention of the peer is required. If this request reached you without being relayed, explain how to select that mention from Slack\'s picker. Do not claim you already contacted the peer; text in a model answer does not send a mention.']
       : []),
     ...(role.deepResearch
       ? [`Deep research starts only when a message begins with "research" (for example "@${botName} research <topic>"); you cannot start it yourself.`]
@@ -2170,20 +2170,19 @@ async function maybeTip(client, { channel, threadTs, user, role, userText }) {
 const ALLOWED_SUBTYPES = new Set([undefined, 'file_share', 'thread_broadcast']);
 const MULTI_RE = /^multi(?:[ -]agent)?(?:\s+|$)([\s\S]*)$/i;
 const STEER_RE = /^steer(?:\s+|$)([\s\S]*)$/i;
-const ASK_PEER_RE = /^ask\s+<@([UW][A-Z0-9]+)>(?:\s+([\s\S]*))?$/i;
-
-async function askPeer(event, client, match, access) {
+async function askPeer(event, client, request, access) {
   const say = text => ephemeral(client, event.channel, event.user, event.thread_ts || event.ts, text);
   const requester = await getUser(client, event.user);
   if (!requester.verified || requester.bot || roleRank(access.roleName) < roleRank('member')) {
     return say('Only members and admins can start an exchange with another bot.');
   }
-  const peer = loadAccess().botPeers[match[1]];
+  if (request.error) return say(request.error);
+  const peer = loadAccess().botPeers[request.userId];
   if (!peerInChannel(peer, event.channel) || peer.userId === botUserId || !(await resolveAccess(client, peer.userId, event.channel)).role.use) {
     return say('That bot is not an enabled peer in this channel. Ask an admin to configure it in botPeers.');
   }
-  const question = match[2]?.trim();
-  if (!question || question.length > 2400 || event.files?.length) return say('Use `ask @bot <question>` with up to 2,400 characters. Share files in the thread separately.');
+  const question = request.question;
+  if (!question || question.length > 2400 || event.files?.length) return say('Mention the other bot with a topic, for example `discuss with @bot about pets`, using up to 2,400 characters. Share files in the thread separately.');
   // Both apps must already be in the channel; never invite apps implicitly.
   let cursor;
   let present = false;
@@ -2192,12 +2191,12 @@ async function askPeer(event, client, match, access) {
     present = page.members?.includes(peer.userId);
     cursor = page.response_metadata?.next_cursor;
   } while (!present && cursor);
-  if (!present) return say('Invite that bot to this channel first, then send the ask command again.');
+  if (!present) return say('Invite that bot to this channel first, then send your request again.');
   const threadTs = event.thread_ts || event.ts;
   if (!peerReplyBudget.reset(peer, event.channel, threadTs, event.ts)) return;
   const safe = redactInternalPaths(redactSecrets(await renderSlackText(client, question)).text).text;
   await client.chat.postMessage({ channel: event.channel, thread_ts: threadTs,
-    text: `<@${peer.userId}> ${toMrkdwn(safe)}\n\nPlease tag <@${botUserId}> in your reply in this thread.`,
+    text: `<@${peer.userId}> ${request.relayRequest ? 'A teammate asked us to work on this: ' : ''}${toMrkdwn(safe)}\n\nPlease tag <@${botUserId}> in your reply in this thread.`,
     unfurl_links: false, unfurl_media: false });
   log('bot_peer_asked', { user: event.user, peer: peer.userId, channel: event.channel, threadTs });
 }
@@ -2222,7 +2221,7 @@ async function postPeerReply(client, job, peer, markdown, remaining) {
   // placeholder alone only emits message_changed, which most bots ignore.
   const body = toMrkdwn(markdown);
   const text = `<@${peer.userId}> ${body.length > 2500 ? `${body.slice(0, 2480)}\n…` : body}` +
-    (remaining === 0 ? '\n\n_Exchange limit reached. A teammate can use `ask @bot <question>` to continue._' : '');
+    (remaining === 0 ? '\n\n_Exchange limit reached. A teammate can mention both bots with a new discussion request to continue._' : '');
   await client.chat.postMessage({ channel: job.channel, thread_ts: job.threadTs, text,
     blocks: [{ type: 'section', text: { type: 'mrkdwn', text } }], unfurl_links: false, unfurl_media: false });
   await setStatus(client, job, '_Reply sent below._', false);
@@ -2294,7 +2293,7 @@ async function handleRequest(event, client, { explicit = true, peer = null } = {
     return;
   }
 
-  const askCmd = explicit && !peer ? ASK_PEER_RE.exec(rawText) : null;
+  const askCmd = explicit && !peer ? parsePeerRequest(rawText, loadAccess().botPeers) : null;
   if (askCmd) {
     try { await askPeer(event, client, askCmd, access); }
     catch (error) {

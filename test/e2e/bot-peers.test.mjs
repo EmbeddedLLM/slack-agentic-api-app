@@ -42,9 +42,10 @@ ok(bot.agentCalls().length === 3 && addressed().length === 4, 'fourth peer messa
 await bot.mention('UVIEW', 'ask <@UPEER> reset please', '123.000001');
 await deliver(event());
 ok(bot.agentCalls().length === 3 && addressed().length === 4, 'viewer cannot reset or start exchanges');
-await bot.mention('UMEM', 'ask <@UPEER> Continue with a conclusion', '123.000001');
+await bot.mention('UMEM', 'discuss with <@UPEER> a conclusion about pets', '123.000001');
+ok(addressed().at(-1).a.text.includes('discuss with @Latte test a conclusion about pets') && !addressed().at(-1).a.text.includes('&lt;@UPEER&gt;'), 'natural wording relays the task with a real recipient mention');
 await deliver(event({ text: '<@UBOT> ask <@UPEER> recursive exchange' }));
-ok(bot.agentCalls().length === 4 && addressed().length === 6, 'human can restart; peer ask text is a normal question and cannot relay or reset');
+ok(bot.agentCalls().length === 4 && addressed().length === 6, 'natural human request resets the limit; peer text cannot relay or reset');
 ok(!bot.agentCalls().at(-1).multi_agent.enabled, 'peer does not launch a nested multi-agent run');
 policy.botPeers.UPEER.channels = ['COTHER'];
 writeFileSync(file, JSON.stringify(policy));
@@ -58,7 +59,12 @@ ok(bot.agentCalls().length === 4, 'removing a peer denies it even with defaultRo
 policy.botPeers = { UPEER: { botId: 'BPEER', role: 'member' } };
 writeFileSync(file, JSON.stringify(policy));
 await bot.mention('UMEM', 'discuss this with the other Slack bot');
-ok(bot.agentCalls().at(-1).prompt.includes('Talk to another Slack bot') && bot.agentCalls().at(-1).prompt.includes('explain the ask command'), 'ordinary requests get accurate instructions for starting a bot exchange');
+ok(bot.agentCalls().at(-1).prompt.includes('Talk to another Slack bot') && bot.agentCalls().at(-1).prompt.includes('A real Slack mention of the peer is required'), 'requests without a peer tag get accurate instructions for starting an exchange');
+const naturalCount = addressed().length;
+await bot.mention('UVIEW', 'talk to <@UPEER> about pets');
+ok(addressed().length === naturalCount, 'natural wording retains member/admin access checks');
+await bot.mention('UMEM', 'please chat with <@UPEER> about a new topic');
+ok(addressed().length === naturalCount + 1 && addressed().at(-1).a.thread_ts === bot.lastTs, 'chat wording starts a fresh threaded exchange');
 await bot.mention('UMEM', 'help');
 ok(JSON.stringify(bot.calls.at(-1)).includes('Talk to another Slack bot'), 'member help includes the peer command');
 await bot.mention('UVIEW', 'help');

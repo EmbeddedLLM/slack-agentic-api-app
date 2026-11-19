@@ -16,7 +16,7 @@ The last example requires a configured [knowledge base](./files). Help and the H
 
 ## Talk to another Slack bot
 
-Members and admins can use `@bot ask @peer <question>` to start an exchange in a shared channel. Both apps need to accept each other's bot messages. Replies stay in the thread and stop at a persisted per-thread limit. See [bot peer setup](./operations#talk-to-another-slack-assistant).
+Members and admins can use `@bot discuss with @peer <topic>`, `@bot talk to @peer about <topic>`, or `@bot ask @peer <question>` to start or resume an exchange in a shared channel. Select actual Slack mentions from the picker. Both apps need to accept each other's bot messages. Replies stay in the thread and stop at a persisted per-thread limit. See [bot peer setup](./operations#talk-to-another-slack-assistant).
 
 ## Multi-agent requests
 
