@@ -37,7 +37,7 @@ The local `create_sticker` function is declared automatically when `createFiles`
 
 `AGENTIC_NATIVE_FILE_INPUTS=true` sends bounded extracted text as native `input_file` data. Set it to `false` to use inline prompt text instead. PDF and Office files still require local text extraction.
 
-The optional `create_teams_meeting` function needs configured Microsoft app IDs and `createMeetings: true` (default for members/admins). With `TEAMS_ORGANIZER_MODE=per_user`, each requester signs in privately and the meeting is created automatically afterward. It returns a join link without calendar invitations. Bot peers cannot use it. See [Teams setup and sign-in](./teams-meetings).
+The optional `create_teams_meeting` helper uses `TEAMS_ORGANIZER_MODE=slack_calls` by default. Members/admins with `createMeetings: true` get a ready-to-send command for the official Teams Calls app. Users send it in the main composer; Meow-AI cannot execute it or schedule a future meeting through that app. See [Teams Calls setup](./teams-meetings) or the separate [Graph automation](./teams-graph) option.
 
 The `VIBE_KANBAN_MCP_LABEL` integration adds the connected project’s board tools for human members/admins with `kanban: true`. Its project-scoped credential stays in `.env.gateway`. See [AgentKanban setup](./mcp#agentkanban-board).
 

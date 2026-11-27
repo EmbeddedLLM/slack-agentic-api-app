@@ -21,7 +21,7 @@ export function teamsConfig(env = process.env) {
     enabled: /^(true|1|yes|on)$/i.test(env.TEAMS_ENABLED || ''),
     tenantId: (env.TEAMS_TENANT_ID || '').trim().toLowerCase(),
     clientId: (env.TEAMS_CLIENT_ID || '').trim().toLowerCase(),
-    mode: env.TEAMS_ORGANIZER_MODE || 'shared',
+    mode: env.TEAMS_ORGANIZER_MODE || 'slack_calls',
     dir: path.resolve(env.TEAMS_STATE_DIR || 'data/teams'),
   };
 }

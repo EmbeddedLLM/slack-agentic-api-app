@@ -444,7 +444,7 @@ function describeAccess(userId, a) {
     `• Can share files with the assistant: ${yn(a.role.readUploads)}`,
     `• Can receive generated files (PDF, CSV, …): ${yn(a.role.createFiles)}`,
     `• Can create polls and bookmark documents: ${yn(a.role.slackActions)}`,
-    `• Can create Teams meeting links: ${yn(a.role.createMeetings && teamsMeetings.ready())}`,
+    `• Can ${teamsMeetings.config.mode === 'slack_calls' ? 'prepare Teams Calls commands' : 'create Teams meeting links'}: ${yn(a.role.createMeetings && teamsMeetings.ready())}`,
     `• Can work with AgentKanban: ${yn(a.role.kanban && cfg.kanbanMcpLabel)}`,
     `• Requests at once: ${a.role.maxJobs ?? cfg.maxJobsPerUser}`,
     `• Deep research (\`research <question>\`): ${yn(a.role.deepResearch)}`,
@@ -2048,7 +2048,9 @@ function capabilities(role, roleName = 'none') {
     caps.push({ icon: '🗳️', title: 'Create Slack polls', text: 'In a channel, create a poll in your thread with voting buttons and live totals. Each person can change their single vote. The creator or an admin can close voting.', examples: ['create a poll: Which day for the demo? Tuesday, Wednesday, or Thursday'] });
     if (role.createFiles) caps.push({ icon: '🔖', title: 'Save channel documents', text: 'Write a Markdown file, upload it in this thread and add its link to this channel’s bookmarks.', examples: ['document the decisions in this thread as decisions.md and bookmark it in this channel'] });
   }
-  if (role.createMeetings && teamsMeetings.ready()) caps.push({ icon: '📅', title: 'Create Teams meeting links', text: `Create a Microsoft Teams join link now or for a scheduled time. ${teamsMeetings.config.mode === 'per_user' ? 'Sign in privately with your own Microsoft account when prompted.' : 'Meetings use the shared organizer.'} No calendar invitations are sent.`, examples: ['create a Teams meeting link for a 30-minute design review now'] });
+  if (role.createMeetings && teamsMeetings.ready()) caps.push(teamsMeetings.config.mode === 'slack_calls'
+    ? { icon: '📅', title: 'Start Teams calls', text: 'Get a ready-to-send command for the official Microsoft Teams Calls app. You send it in the main channel or DM; that app handles sign-in and the join prompt. Future meetings need scheduling in Teams or Outlook.', examples: ['help me start a Teams call for a design review'] }
+    : { icon: '📅', title: 'Create Teams meeting links', text: `Create a Microsoft Teams join link now or for a scheduled time. ${teamsMeetings.config.mode === 'per_user' ? 'Sign in privately with your own Microsoft account when prompted.' : 'Meetings use the shared organizer.'} No calendar invitations are sent.`, examples: ['create a Teams meeting link for a 30-minute design review now'] });
   if (role.kanban && cfg.kanbanMcpLabel) caps.push({ icon: '📋', title: 'Work with AgentKanban', text: 'List board columns and issues, create cards, move them, assign members and add comments in the connected project.', examples: ['show the AgentKanban board columns', 'create an issue in Backlog titled Update the setup guide'] });
   if (role.deepResearch) {
     caps.push({
@@ -2550,8 +2552,9 @@ async function handleRequest(event, client, { explicit = true, peer = null } = {
               );
             }
           }
+          if (job.teamsResult?.requires_user_action) return job.teamsResult.next_step;
           return meetingReply(job.teamsResult?.ok === false && !job.teamsMeeting
-            ? `The Teams meeting was not confirmed. ${job.teamsResult.error}` : answer, job.teamsMeeting);
+            ? `${teamsMeetings.config.mode === 'slack_calls' ? 'Could not prepare the Teams call command.' : 'The Teams meeting was not confirmed.'} ${job.teamsResult.error}` : answer, job.teamsMeeting);
         });
       } finally {
         clearInterval(ticker);

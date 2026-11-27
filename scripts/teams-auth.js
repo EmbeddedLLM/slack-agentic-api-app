@@ -4,7 +4,12 @@ import { TeamsAuth } from '../src/teams-auth.js';
 const auth = new TeamsAuth();
 const command = process.argv[2];
 try {
-  if (auth.config.mode === 'per_user' && ['login', 'status', 'logout'].includes(command)) {
+  if (auth.config.mode === 'slack_calls' && ['login', 'status', 'logout'].includes(command)) {
+    console.log('Teams mode: official Microsoft Teams Calls for Slack. No tenant/client IDs are needed.');
+    if (command === 'login') console.log('In Slack, open Apps → Microsoft Teams Calls → Home → Connect, then sign in to Microsoft.');
+    if (command === 'logout') console.log('In the main channel or DM composer, send /teams-calls logout and confirm there.');
+    if (command === 'status') console.log(`Meow-AI command handoff: ${auth.config.enabled ? 'enabled' : 'disabled'}\nThe official app’s installation/sign-in status must be checked in Slack. Meow-AI does not create meetings in this mode.`);
+  } else if (auth.config.mode === 'per_user' && ['login', 'status', 'logout'].includes(command)) {
     if (command !== 'logout') auth.validate();
     if (command === 'status') {
       console.log(`Teams configuration: OK\nOrganizer: each Slack requester\nTool enabled: ${auth.config.enabled ? 'yes' : 'no (set TEAMS_ENABLED=true)'}`);
