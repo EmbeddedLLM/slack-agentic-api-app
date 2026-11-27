@@ -6,6 +6,7 @@ A self-hosted Slack assistant built on [Agentic API](https://github.com/vllm-pro
 
 - Slack mentions, DMs, threaded memory, role permissions, job limits and cancellation.
 - [Interactive polls and bookmarked Markdown documents](docs/polls-and-documents.md), using local function tools over the gateway WebSocket.
+- [Microsoft Teams meeting links](docs/teams-meetings.md) using a shared work/school organizer, with one-time Microsoft sign-in.
 - You.com web search through the gateway, with cited results.
 - Optional [official GitHub MCP](docs/mcp.md) for public repository, issue and PR research.
 - `multi <task>` for gateway subagents and multi-agent research.
@@ -60,6 +61,7 @@ Slack Socket Mode needs **no public URL or inbound listener**. Keep the gateway 
 - [Input files and searchable knowledge](docs/files.md)
 - [Research and recovery](docs/research.md)
 - [Create GIF stickers](docs/stickers.md)
+- [Create Teams meeting links](docs/teams-meetings.md)
 - [Configuration and operations](docs/operations.md)
 - [Protocol and architecture](docs/architecture.md)
 

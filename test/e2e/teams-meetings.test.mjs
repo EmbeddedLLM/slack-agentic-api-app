@@ -1,0 +1,61 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { TeamsAuth } from '../../src/teams-auth.js';
+import { tenantId, clientId } from '../helpers/msal.js';
+import { startBot, ok, J, finish } from './harness.mjs';
+
+const dir = mkdtempSync(path.join(os.tmpdir(), 'teams-e2e-'));
+const auth = new TeamsAuth({ enabled: true, dir, tenantId, clientId });
+await auth.login(() => {});
+const graphCalls = [];
+globalThis.fetch = async (url, options) => {
+  if (url !== 'https://graph.microsoft.com/v1.0/me/onlineMeetings/createOrGet') throw new Error('Unexpected network call');
+  const body = JSON.parse(options.body);
+  graphCalls.push(body);
+  return Response.json({ id: body.externalId, subject: body.subject, startDateTime: body.startDateTime, endDateTime: body.endDateTime,
+    joinWebUrl: `https://teams.microsoft.com/l/meetup-join/${body.externalId}` }, { status: 201 });
+};
+const bot = await startBot({ TEAMS_ENABLED: 'true', TEAMS_STATE_DIR: dir, TEAMS_TENANT_ID: tenantId, TEAMS_CLIENT_ID: clientId });
+bot.setMode('teams');
+await bot.mention('UMEM', 'create a Teams meeting link now for a 30-minute design review');
+const declared = bot.gateway.requests[0].tools.find(tool => tool.name === 'create_teams_meeting');
+ok(declared?.description.includes('shared work/school organizer') && declared.strict, 'WS payload declares the Teams function with model guidance');
+const output = JSON.parse(bot.gateway.requests[1].input.find(item => item.type === 'function_call_output').output);
+ok(output.ok && output.join_url && !output.invitations_sent, 'confirmed Graph link continues over the gateway WebSocket');
+ok(bot.gateway.connections.length === 1, 'Teams function continuation uses the same WebSocket');
+ok(!J(bot.gateway.requests).includes('test-microsoft-access-token'), 'Microsoft credentials never enter the model payload');
+ok(J(bot.calls.filter(c => c.m === 'chat.update').at(-1).a).includes(output.join_url), 'verified link is delivered even if the final model text omits it');
+ok(bot.calls.filter(c => c.m === 'chat.postMessage').every(c => c.a.thread_ts === bot.lastTs), 'meeting stays in the request thread');
+
+await bot.dm('UMEM', 'create a Teams meeting link now');
+ok(graphCalls.length === 2 && bot.gateway.requests.at(-2).tools.some(t => t.name === 'create_teams_meeting'), 'authorized humans can create meeting links in DMs');
+bot.setMode('teams-failure');
+await bot.mention('UMEM', 'create another Teams meeting');
+ok(/already created/.test(J(bot.calls.filter(c => c.m === 'chat.update').at(-1).a)) && J(bot.calls.at(-1)).includes('teams.microsoft.com'), 'model failure after meeting creation preserves the real join link');
+bot.setMode('teams-malformed');
+const before = bot.gateway.requests.length;
+await bot.mention('UMEM', 'create a Teams link');
+ok(bot.gateway.requests.length === before + 2 && graphCalls.length === 4, 'malformed model output after a Graph write does not retry the action');
+
+bot.setMode('complete');
+await bot.mention('UVIEW', 'create a Teams meeting');
+ok(!bot.gateway.requests.at(-1).tools.some(t => t.name === 'create_teams_meeting'), 'viewer cannot create meetings');
+const policyFile = path.join(bot.dir, 'access.json');
+const policy = JSON.parse(readFileSync(policyFile));
+policy.roles = { member: { createMeetings: false } };
+writeFileSync(policyFile, JSON.stringify(policy));
+await bot.mention('UMEM', 'create a Teams meeting');
+ok(!bot.gateway.requests.at(-1).tools.some(t => t.name === 'create_teams_meeting'), 'member meeting permission can be disabled without restart');
+delete policy.roles;
+policy.botPeers = { UPEER: { botId: 'BPEER', role: 'member' } };
+writeFileSync(policyFile, JSON.stringify(policy));
+bot.users.UPEER = { is_bot: true, profile: { bot_id: 'BPEER' } };
+bot.members.push('UPEER');
+await bot.mention('UPEER', 'create a Teams meeting');
+ok(!bot.gateway.requests.at(-1).tools.some(t => t.name === 'create_teams_meeting'), 'trusted bot peers cannot create organizer meetings');
+auth.logout();
+await bot.mention('UADMIN', 'create a Teams meeting');
+ok(!bot.gateway.requests.at(-1).tools.some(t => t.name === 'create_teams_meeting'), 'unconfigured or signed-out organizer never advertises the tool');
+rmSync(dir, { recursive: true, force: true });
+finish();

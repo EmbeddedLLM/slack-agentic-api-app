@@ -31,6 +31,13 @@ export async function startBot(extraEnv = {}) {
     else if (mode === 'slowchat') return;
     else if (mode === 'code') complete('The result is 42.', { output: [{ type: 'code_interpreter_call', status: 'completed', outputs: [{ type: 'logs', logs: '42' }] }, ...response('The result is 42.').output] });
     else if (mode === 'multi') complete('combined answer', { output: [{ ...response('child details').output[0], agent: { agent_name: '/root/helper' } }, { ...response('combined answer').output[0], agent: { agent_name: '/root' }, phase: 'final_answer' }] });
+    else if (['teams', 'teams-failure', 'teams-malformed'].includes(mode)) {
+      if (request.input.some(item => item.type === 'function_call_output')) {
+        if (mode === 'teams-failure') return send({ type: 'error', error: { code: 'provider_error' } });
+        complete(mode === 'teams-malformed' ? '{"name":"create_teams_meeting","arguments":{}}' : 'The meeting is ready.');
+      } else complete('', { output: [{ type: 'function_call', name: 'create_teams_meeting', call_id: 'teams_call',
+        arguments: JSON.stringify({ subject: 'Design review', starts_at: null, duration_minutes: 30 }) }] });
+    }
     else if (['poll', 'poll-malformed', 'document'].includes(mode)) {
       const isPoll = mode.startsWith('poll');
       if (request.input.some(item => item.type === 'function_call_output')) complete(mode === 'poll-malformed' ? '{"name":"create_poll","arguments":{}}' : isPoll ? 'The poll is ready in this thread.' : 'The document is uploaded and bookmarked.');
@@ -57,7 +64,7 @@ export async function startBot(extraEnv = {}) {
     BOT_PEER_STATE_DIR: path.join(dir, 'bot-peers'),
     SLACK_TOOLS_DIR: path.join(dir, 'slack-tools'),
     AGENTIC_SESSION_DIR: path.join(dir, 'sessions'), HINTS_FILE: path.join(dir, 'hints.json'),
-    INPUT_FILES_DIR: path.join(dir, 'inputs'), SLACK_REACTIONS: 'false',
+    INPUT_FILES_DIR: path.join(dir, 'inputs'), SLACK_REACTIONS: 'false', TEAMS_ENABLED: 'false',
     AGENTIC_TOOLS: 'web_search', AGENTIC_TOOLS_TRUSTED: 'web_search', RESEARCH_MULTI_AGENT: 'false', ...extraEnv,
   });
   let ts = 1000;

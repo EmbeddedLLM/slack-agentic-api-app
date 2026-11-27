@@ -37,6 +37,8 @@ The local `create_sticker` function is declared automatically when `createFiles`
 
 `AGENTIC_NATIVE_FILE_INPUTS=true` sends bounded extracted text as native `input_file` data. Set it to `false` to use inline prompt text instead. PDF and Office files still require local text extraction.
 
+The optional `create_teams_meeting` function needs a configured shared Microsoft organizer and `createMeetings: true` (default for members/admins). It returns a join link without calendar invitations. Bot peers cannot use it. See [Teams setup and sign-in](./teams-meetings).
+
 ## Talk to another Slack assistant
 
 Invite both assistants to the same channel. Add the other bot to `botPeers` in the existing `access.json`, using its **user ID and bot ID** from Slack's `users.info` response (`user.id` and `user.profile.bot_id`):

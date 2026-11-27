@@ -15,8 +15,8 @@
   },
   "scripts": {
     "start": "node scripts/start-app.js",
-    "check": "node --check index.js && node --check src/agentic-client.js && node --check src/research.js && node --check src/steering.js && node --check list-users.js && node --check check-files.js && node --check src/knowledge-client.js && node --check scripts/knowledge.js && node --check scripts/run-gateway.js && node --check scripts/print-user-service.js && node --check src/sticker.js && node --check src/sticker-worker.js && node --check scripts/gateway-integration.js && node --check scripts/sticker-smoke.js && node --check src/sticker-image.js && node --check src/bot-peers.js && node --check src/app-runtime.js && node --check scripts/start-app.js && node --check src/slack-tools.js && node --check src/sticker-cutout.js && node --check src/sticker-art.js && node --check src/mcp-tools.js && node --check src/mcp-config.js",
-    "test": "npm run check && node --test test/*.test.js && node --import ./test/e2e/setup.mjs test/e2e/help.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/research.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/chat.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/capabilities.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/bot-peers.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/slack-tools.test.mjs",
+    "check": "node --check index.js && node --check src/agentic-client.js && node --check src/research.js && node --check src/steering.js && node --check list-users.js && node --check check-files.js && node --check src/knowledge-client.js && node --check scripts/knowledge.js && node --check scripts/run-gateway.js && node --check scripts/print-user-service.js && node --check src/sticker.js && node --check src/sticker-worker.js && node --check scripts/gateway-integration.js && node --check scripts/sticker-smoke.js && node --check src/sticker-image.js && node --check src/bot-peers.js && node --check src/app-runtime.js && node --check scripts/start-app.js && node --check src/slack-tools.js && node --check src/sticker-cutout.js && node --check src/sticker-art.js && node --check src/mcp-tools.js && node --check src/mcp-config.js && node --check src/teams-auth.js && node --check src/teams-meetings.js && node --check scripts/teams-auth.js",
+    "test": "npm run check && node --test test/*.test.js && node --import ./test/e2e/setup.mjs test/e2e/help.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/research.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/chat.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/capabilities.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/bot-peers.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/slack-tools.test.mjs && node --import ./test/e2e/setup.mjs test/e2e/teams-meetings.test.mjs",
     "users": "node list-users.js",
     "check-files": "node check-files.js",
     "smoke": "node scripts/smoke.js",
@@ -31,9 +31,13 @@
     "start:bot": "node index.js",
     "sticker:install": "bash scripts/install-sticker-art.sh",
     "sticker:install:art": "bash scripts/install-sticker-art.sh --art",
-    "sticker:serve": "python3 scripts/start-sticker-art.py"
+    "sticker:serve": "python3 scripts/start-sticker-art.py",
+    "teams:login": "node scripts/teams-auth.js login",
+    "teams:status": "node scripts/teams-auth.js status",
+    "teams:logout": "node scripts/teams-auth.js logout"
   },
   "dependencies": {
+    "@azure/msal-node": "7.2.3",
     "@resvg/resvg-js": "^2.6.2",
     "@slack/bolt": "^4.7.3",
     "dotenv": "^16.6.1",
