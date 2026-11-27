@@ -117,6 +117,7 @@ test('automatic mode reports missing Microsoft configuration without falling bac
   assert.equal(accounts.ready(), false);
   const result = await accounts.handler({ job: {}, authorize: async () => true })(raw);
   assert.equal(result.setup_required, true);
-  assert.match(result.error, /TEAMS_TENANT_ID/);
+  assert.match(result.error, /contact the bot admin/);
+  assert.doesNotMatch(result.error, /TEAMS_|ReadWrite|client flows|https:/);
   assert.ok(!result.command && !result.requires_user_action);
 });

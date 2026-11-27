@@ -57,7 +57,7 @@ export class TeamsAccounts {
       catch (error) { return { ok: false, error: error instanceof SyntaxError ? 'Tool arguments must be valid JSON.' : error.message }; }
       signal?.throwIfAborted();
       if (!this.config.enabled || job.cancelled || !(await authorize())) return { ok: false, error: 'Your current permissions do not allow creating a Teams meeting.' };
-      if (!this.ready()) return { ok: false, setup_required: true, error: 'Automatic Teams creation needs a one-time Microsoft app setup by the bot admin: TEAMS_TENANT_ID, TEAMS_CLIENT_ID, public client flows, and delegated OnlineMeetings.ReadWrite plus Calendars.ReadWrite consent. See https://embeddedllm.github.io/slack-agentic-api-app/teams-graph . After setup, each requester signs in privately once; Meow-AI creates the meeting and sends invitations. The linked Teams Calls app cannot supply this authorization.' };
+      if (!this.ready()) return { ok: false, setup_required: true, error: 'Teams meetings aren’t enabled yet. Please contact the bot admin to enable them.' };
       let resolvedAttendees;
       const { key, service } = this.account(job);
       if (this.signIns.has(key)) return { ok: false, error: 'You already have a Microsoft sign-in pending for another meeting request. Complete or cancel that request first.' };

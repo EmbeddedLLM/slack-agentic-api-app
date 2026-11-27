@@ -2553,6 +2553,7 @@ async function handleRequest(event, client, { explicit = true, peer = null } = {
             }
           }
           if (job.teamsResult?.requires_user_action) return job.teamsResult.next_step;
+          if (job.teamsResult?.setup_required && !job.teamsMeeting) return job.teamsResult.error;
           return meetingReply(job.teamsResult?.ok === false && !job.teamsMeeting
             ? `${teamsMeetings.config.mode === 'slack_calls' ? 'Could not prepare the Teams call command.' : 'The Teams meeting was not confirmed.'} ${job.teamsResult.error}` : answer, job.teamsMeeting);
         });
