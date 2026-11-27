@@ -37,6 +37,10 @@ SLACK_CLI_APP_ICON_PATH=assets/meow-ai.png slack run --app A_YOUR_APP_ID --team 
 
 The CLI prints `Updated app icon` when Slack accepts the upload. Substitute your own square image path to use different branding. See Slack's [icon upload support](https://docs.slack.dev/changelog/2026/08/28/slack-cli/) and [icon path environment variable](https://docs.slack.dev/changelog/2026/05/19/slack-cli/).
 
+### Upgrade for polls and channel documents
+
+Add **`bookmarks:write`** to the bot scopes and reinstall the app. `files:write`, `files:read` and `chat:write` are already in the manifest. Keep Interactivity enabled for poll voting and closing. The new [poll and document tools](./polls-and-documents) are enabled for members and admins by default.
+
 ## Create a new app or configure tokens manually
 
 1. Open [Your Apps](https://api.slack.com/apps), choose **Create New App → From a manifest**, choose the workspace and paste `slack-app-manifest.json`.

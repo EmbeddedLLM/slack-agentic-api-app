@@ -26,6 +26,7 @@ await deliver(first);
 ok(bot.agentCalls().length === 1, 'trusted peer bot_message reaches the WebSocket gateway');
 ok(addressed().length === 2 && addressed().at(-1).a.text.includes('normal answer'), 'completed answer is a fresh, addressed post rather than only a placeholder update');
 ok(bot.agentCalls()[0].tools.some(t => t.type === 'web_search'), 'peer gets its explicitly configured role tools');
+ok(!bot.agentCalls()[0].tools.some(t => ['create_poll', 'save_channel_document'].includes(t.name)), 'peer exchanges cannot create polls or channel documents');
 ok(bot.agentCalls()[0].prompt.includes('another team assistant'), 'model knows it is answering a peer');
 await deliver({ ...first, type: 'app_mention', subtype: undefined });
 ok(bot.agentCalls().length === 1, 'overlapping message and app_mention events are deduplicated');

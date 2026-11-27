@@ -1,0 +1,58 @@
+import { startBot, ok, J, finish } from './harness.mjs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+const bot = await startBot();
+bot.setMode('poll');
+await bot.mention('UMEM', 'create a poll: Demo day? Tuesday or Wednesday');
+const first = bot.gateway.requests[0];
+ok(['create_poll', 'save_channel_document', 'create_sticker'].every(name => first.tools.some(tool => tool.name === name && tool.description)), 'member WS request declares all local functions with model guidance');
+const poll = bot.calls.find(c => c.m === 'chat.postMessage' && c.a.blocks?.some(b => b.accessory?.action_id === 'poll_vote'));
+ok(poll?.a.thread_ts === bot.lastTs, 'interactive poll is posted in the originating thread');
+const result = JSON.parse(bot.gateway.requests[1].input.find(i => i.type === 'function_call_output').output);
+ok(result.ok && result.poll_id && result.message_ts, 'real local tool result continues inference over the same WebSocket');
+ok(bot.gateway.connections.length === 1, 'the function continuation reuses its gateway connection');
+const vote = poll.a.blocks.find(b => b.accessory?.action_id === 'poll_vote').accessory.value;
+await bot.click('poll_vote', vote, 'UMEM', result.message_ts);
+await bot.click('poll_vote', vote, 'UVIEW', result.message_ts);
+ok(/2 votes/.test(bot.calls.filter(c => c.m === 'chat.update').at(-1).a.text), 'authorized humans vote via acknowledged Bolt buttons without inference');
+bot.users.UPEER = { is_bot: true, profile: { bot_id: 'BPEER' } };
+await bot.click('poll_vote', vote, 'UPEER', result.message_ts);
+ok(bot.ephemerals().some(text => /does not allow voting/.test(text)), 'bot accounts cannot vote');
+await bot.click('poll_close', result.poll_id, 'UVIEW', result.message_ts);
+ok(bot.ephemerals().some(text => /Only the poll creator/.test(text)), 'other voters cannot close a poll');
+await bot.click('poll_close', result.poll_id, 'UMEM', result.message_ts);
+ok(/Closed/.test(bot.calls.filter(c => c.m === 'chat.update').at(-1).a.text), 'creator can close voting');
+
+bot.setMode('document');
+const beforeDoc = bot.gateway.requests.length;
+await bot.mention('UMEM', 'document this as decisions.md and bookmark it');
+const doc = bot.calls.find(c => c.m === 'files.uploadV2' && c.a.filename === 'decisions.md');
+ok(doc.a.thread_ts === bot.lastTs && doc.a.file.toString().startsWith('# Decisions'), 'document is a real Markdown file shared in the current thread');
+const bookmark = bot.calls.find(c => c.m === 'bookmarks.add');
+ok(bookmark.a.channel_id === 'C0TEST' && bookmark.a.link === 'https://test.slack.com/files/UBOT/FDOC/decisions.md', 'bookmark links to the uploaded Slack file in the request channel');
+ok(JSON.parse(bot.gateway.requests[beforeDoc + 1].input[0].output).bookmarked, 'model receives verified bookmark success');
+
+bot.setMode('poll-malformed');
+const beforeMalformed = bot.gateway.requests.length;
+await bot.mention('UMEM', 'create another poll');
+ok(bot.gateway.requests.length === beforeMalformed + 2 && /after a Slack action/.test(J(bot.calls.filter(c => c.m === 'chat.update').at(-1).a)), 'malformed model text after a Slack write fails without retrying or duplicating the action');
+
+bot.setMode('complete');
+await bot.mention('UVIEW', 'create a poll');
+ok(!bot.gateway.requests.at(-1).tools.some(t => ['create_poll', 'save_channel_document'].includes(t.name)), 'viewer request does not declare Slack write tools');
+await bot.dm('UMEM', 'bookmark this document');
+ok(!bot.gateway.requests.at(-1).tools.some(t => ['create_poll', 'save_channel_document'].includes(t.name)), 'channel tools are not exposed in DMs');
+const policyFile = path.join(bot.dir, 'access.json');
+const policy = JSON.parse(readFileSync(policyFile));
+policy.roles = { member: { slackActions: false } };
+writeFileSync(policyFile, JSON.stringify(policy));
+await bot.mention('UMEM', 'create a poll');
+ok(!bot.gateway.requests.at(-1).tools.some(t => ['create_poll', 'save_channel_document'].includes(t.name)), 'disabling slackActions takes effect without restart');
+policy.roles.member = { createFiles: false };
+writeFileSync(policyFile, JSON.stringify(policy));
+await bot.mention('UMEM', 'help');
+ok(/Create Slack polls/.test(J(bot.calls.at(-1).a)) && !/Save channel documents/.test(J(bot.calls.at(-1).a)), 'help respects separate file creation permission');
+await bot.mention('UMEM', 'create a poll');
+ok(bot.gateway.requests.at(-1).tools.some(t => t.name === 'create_poll') && !bot.gateway.requests.at(-1).tools.some(t => t.name === 'save_channel_document'), 'document tool also requires createFiles');
+finish();

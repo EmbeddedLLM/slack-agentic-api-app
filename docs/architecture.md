@@ -29,7 +29,7 @@ A continuation adds `previous_response_id`. Declared tools and instructions are 
 
 There is one connection per active Slack job. Research reuses its connection across section, synthesis and summary requests. A normal chat job closes its connection after the response. Subsequent chat jobs use durable `previous_response_id` continuation on a new connection. This bounds connection lifetime and means a disconnect can cancel one job without affecting another. The gateway has no `response.cancel` frame used by this client: cancellation terminates the job's connection.
 
-The bridge does not automatically retry network failures, because a tool may already have run. It retries one model answer containing unparsed tool-call markup, resetting the local response pointer first. An interrupted research section is rerun only when someone presses Resume.
+The bridge does not automatically retry network failures, because a tool may already have run. It retries one model answer containing unparsed tool-call markup, resetting the local response pointer first, unless a local file was generated or a Slack write was attempted. An interrupted research section is rerun only when someone presses Resume.
 
 Slack's Web API and file downloads still use HTTPS, and Slack Socket Mode uses its own WebSocket connection. The bridge-to-Agentic-API inference path uses WebSocket exclusively. The gateway's connection to vLLM is configured separately.
 
@@ -60,3 +60,7 @@ Inference, including file search, uses WebSocket. Administrative ingestion uses 
 ## Local sticker function
 
 For file-authorized chat roles, `create_sticker` validates model-provided SVG frames, renders a bounded GIF in a separate worker, and queues the bytes for the Slack reply. No generated JavaScript, shell commands or filesystem paths are executed. Stored responses continue by ID after a function call; stateless requests replay the original public output and matching call result. Local functions have bounded rounds, cancellation and repeated-call protection. See [GIF stickers](./stickers).
+
+## Local Slack action functions
+
+`src/slack-tools.js` implements `create_poll` and `save_channel_document`. Function definitions and permission-scoped handlers are supplied to `AgenticClient.respond`, using the same standard function continuation and multi-agent live injection as stickers. Destinations come from the originating Slack job. Arguments are validated and scrubbed before use, and permissions are checked before writes. Poll interactions use Bolt Socket Mode without model inference. Persisted per-request action results prevent identical function calls from duplicating polls, files or bookmarks; per-poll serialization preserves simultaneous votes. See [polls and documents](./polls-and-documents) for scopes, limits and storage.

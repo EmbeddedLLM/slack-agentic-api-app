@@ -102,7 +102,7 @@ The service starts and supervises the source gateway and bot together by default
 
 ## Persistence and recovery
 
-Keep both the bot `data/` directory and the gateway database on persistent storage. The bot stores response pointers, research reports/checkpoints and one-time help hints. The gateway stores response history. Back them up according to your team's conversation-retention policy; local pointer deletion does not delete gateway history.
+Keep both the bot `data/` directory and the gateway database on persistent storage. The bot stores response pointers, research reports/checkpoints, one-time help hints, and poll/document state. `SLACK_TOOLS_DIR` (default `data/slack-tools`) also holds the local Markdown copies. The `slackActions` role flag controls poll creation and channel bookmarking; document creation also requires `createFiles`. See [polls and documents](./polls-and-documents). The gateway stores response history. Back them up according to your team's conversation-retention policy; local pointer deletion does not delete gateway history.
 
 Research folders expire after `RESEARCH_KEEP_DAYS` (30 by default), measured by the thread folder's modification time. Pending plans are in memory and must be recreated after a restart. Jobs queued at restart are not replayed. After a failed research run, Resume repeats its interrupted section; completed sections are retained. A completed report remains on disk if Slack upload fails.
 

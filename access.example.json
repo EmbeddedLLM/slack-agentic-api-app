@@ -15,7 +15,8 @@
       "createFiles": true,
       "multiAgent": true,
       "deepResearch": true,
-      "cancelAny": false
+      "cancelAny": false,
+      "slackActions": true
     },
     "admin": {
       "tools": "web_search,code_interpreter",
@@ -23,7 +24,8 @@
       "createFiles": true,
       "cancelAny": true,
       "deepResearch": true,
-      "multiAgent": true
+      "multiAgent": true,
+      "slackActions": true
     }
   },
   "users": {

@@ -31,6 +31,12 @@ export async function startBot(extraEnv = {}) {
     else if (mode === 'slowchat') return;
     else if (mode === 'code') complete('The result is 42.', { output: [{ type: 'code_interpreter_call', status: 'completed', outputs: [{ type: 'logs', logs: '42' }] }, ...response('The result is 42.').output] });
     else if (mode === 'multi') complete('combined answer', { output: [{ ...response('child details').output[0], agent: { agent_name: '/root/helper' } }, { ...response('combined answer').output[0], agent: { agent_name: '/root' }, phase: 'final_answer' }] });
+    else if (['poll', 'poll-malformed', 'document'].includes(mode)) {
+      const isPoll = mode.startsWith('poll');
+      if (request.input.some(item => item.type === 'function_call_output')) complete(mode === 'poll-malformed' ? '{"name":"create_poll","arguments":{}}' : isPoll ? 'The poll is ready in this thread.' : 'The document is uploaded and bookmarked.');
+      else complete('', { output: [{ type: 'function_call', name: isPoll ? 'create_poll' : 'save_channel_document', call_id: `${mode}_call`,
+        arguments: JSON.stringify(isPoll ? { question: 'Demo day?', options: ['Tuesday', 'Wednesday'] } : { title: 'Decisions', filename: 'decisions.md', content: '# Decisions\n\nDemo on Tuesday.' }) }] });
+    }
     else if (mode === 'image-sticker') {
       if (request.input.some(item => item.type === 'function_call_output')) complete('Your image is now a bouncing GIF sticker.');
       else complete('', { output: [{ type: 'function_call', name: 'create_sticker', call_id: 'image_sticker_call', arguments: JSON.stringify({ filename: 'uploaded-sticker.gif', prompt: 'Bounce this image', frames: null, source_image: { id: 'image_1', motion: 'bounce', background: 'keep' } }) }] });
@@ -49,6 +55,7 @@ export async function startBot(extraEnv = {}) {
     AGENTIC_WS_URL: gateway.url, AGENTIC_MODEL: 'test-model', AGENTIC_API_KEY: 'gateway-test-token',
     ACCESS_FILE: path.join(dir, 'access.json'), RESEARCH_DIR: path.join(dir, 'research'),
     BOT_PEER_STATE_DIR: path.join(dir, 'bot-peers'),
+    SLACK_TOOLS_DIR: path.join(dir, 'slack-tools'),
     AGENTIC_SESSION_DIR: path.join(dir, 'sessions'), HINTS_FILE: path.join(dir, 'hints.json'),
     INPUT_FILES_DIR: path.join(dir, 'inputs'), SLACK_REACTIONS: 'false',
     AGENTIC_TOOLS: 'web_search', AGENTIC_TOOLS_TRUSTED: 'web_search', RESEARCH_MULTI_AGENT: 'false', ...extraEnv,
@@ -65,6 +72,9 @@ export async function startBot(extraEnv = {}) {
     if (m === 'conversations.replies' || m === 'conversations.history') return { messages: [] };
     if (m === 'conversations.info') return { channel: { name: 'general', is_channel: true } };
     if (m === 'auth.test') return { user_id: 'UBOT', bot_id: 'B1', user: 'test-bot' };
+    if (m === 'files.uploadV2') return { ok: true, files: [{ ok: true, files: [{ id: 'FDOC' }] }] };
+    if (m === 'files.info') return { ok: true, file: { id: 'FDOC', permalink: 'https://test.slack.com/files/UBOT/FDOC/decisions.md' } };
+    if (m === 'bookmarks.add') return { ok: true, bookmark: { id: 'BKDOC' } };
     return { ok: true };
   };
   const client = new Proxy({}, { get: (_, ns) => new Proxy({}, { get: (_, fn) => record(`${ns}.${fn}`) }) });

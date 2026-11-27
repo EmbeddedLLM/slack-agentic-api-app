@@ -5,6 +5,7 @@ A self-hosted Slack assistant built on [Agentic API](https://github.com/vllm-pro
 ## Capabilities
 
 - Slack mentions, DMs, threaded memory, role permissions, job limits and cancellation.
+- [Interactive polls and bookmarked Markdown documents](docs/polls-and-documents.md), using local function tools over the gateway WebSocket.
 - You.com web search through the gateway, with cited results.
 - `multi <task>` for gateway subagents and multi-agent research.
 - `steer <update>` for an active standard request, with successor tracking.

@@ -51,3 +51,7 @@ Python and search run on the gateway. The bot displays progress from observed to
 ## Small animated stickers
 
 Ask for a GIF sticker in a normal message, or attach an image with a motion prompt. Roles with file creation can use the local `create_sticker` function, which renders 256 × 256 animations of at most 256 KB and attaches them in the thread. See [sticker creation](./stickers).
+
+## Polls and bookmarked documents
+
+Ask `@bot create a poll: Demo day? Tuesday or Wednesday` for voting buttons and live totals in your thread. Ask `@bot document these decisions as decisions.md and bookmark it` to upload a Markdown file and add its Slack link to channel bookmarks. These use the local `create_poll` and `save_channel_document` functions, enabled for human members and admins. Existing installations need the new `bookmarks:write` scope and a reinstall. See [polls and channel documents](./polls-and-documents).
