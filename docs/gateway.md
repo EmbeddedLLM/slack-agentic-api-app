@@ -39,6 +39,19 @@ The combined launcher reads `.env.gateway`, removes any `SLACK_*` environment va
 
 Only one process can bind port 9000. Keep your existing gateway running during testing by setting a different `GATEWAY_PORT`; point the bot's `AGENTIC_WS_URL` at that port.
 
+### Request timeouts
+
+Two independent settings apply:
+
+```dotenv
+# .env — Slack client: total duration of one response
+AGENTIC_TIMEOUT_MS=600000
+# .env.gateway — gateway: wait for headers or the next upstream chunk
+STREAMING_CHUNK_TIMEOUT_S=600
+```
+
+Both values represent 10 minutes, but the units differ. The gateway already defaults to 600 seconds and does not impose a total inference-round deadline while upstream data keeps arriving. A log saying `The gateway request timed out` is the Slack client reaching `AGENTIC_TIMEOUT_MS`. The gateway’s `--llm-ready-timeout-s` controls startup readiness, not inference. Restart the combined launcher after environment edits; Slack authentication stays intact. See the upstream [timeout configuration](https://github.com/vllm-project/agentic-api/blob/main/docs/guides/configuration.md#typed-upstream-timeouts).
+
 ### Change the model or its port
 
 Slack authentication does not depend on your model server. Change `LLM_API_BASE` in `.env.gateway` to the new model-server address, and change `AGENTIC_MODEL` in the app's `.env` to the exact served model name. Restart your combined `npm start` or `slack run --app A_YOUR_APP_ID --team T_YOUR_TEAM_ID --no-activity` command; it restarts both the gateway and bot. No new Slack login or app creation is needed.

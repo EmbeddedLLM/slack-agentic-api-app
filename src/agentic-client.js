@@ -96,7 +96,7 @@ export function validateResponse(response, allowedFunctions = []) {
 // A connection belongs to one Slack job. Research reuses it between sections.
 // Closing it cancels that job without interrupting any other user's connection.
 export class AgenticClient {
-  constructor({ url, token = '', model, timeoutMs = 180_000, maxFrameBytes = 16 * 1024 * 1024, maxRequestBytes = 10 * 1024 * 1024, maxOutputTokens = 8192 } = {}) {
+  constructor({ url, token = '', model, timeoutMs = 600_000, maxFrameBytes = 16 * 1024 * 1024, maxRequestBytes = 10 * 1024 * 1024, maxOutputTokens = 8192 } = {}) {
     const endpoint = new URL(url);
     if (!['ws:', 'wss:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.hash || endpoint.search) {
       throw new AgenticError('AGENTIC_WS_URL must be a ws:// or wss:// URL without credentials, query, or fragment.');
@@ -305,7 +305,7 @@ export function clientSettings(env = process.env) {
     url: env.AGENTIC_WS_URL || 'ws://127.0.0.1:9000/v1/responses',
     token: env.AGENTIC_API_KEY || '',
     model: env.AGENTIC_MODEL,
-    timeoutMs: positive('AGENTIC_TIMEOUT_MS', 180_000),
+    timeoutMs: positive('AGENTIC_TIMEOUT_MS', 600_000),
     maxOutputTokens: positive('AGENTIC_MAX_OUTPUT_TOKENS', 8192),
     maxRequestBytes: positive('AGENTIC_MAX_REQUEST_BYTES', 10 * 1024 * 1024),
     maxConcurrentSubagents: positive('AGENTIC_MAX_CONCURRENT_SUBAGENTS', 3),

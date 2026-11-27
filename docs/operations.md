@@ -77,7 +77,8 @@ Access-file edits apply to the next request. Code upgrades require a restart und
 ## Limits and optional features
 
 - `MAX_CONCURRENT_JOBS=2`, `MAX_JOBS_PER_USER=2`: running and queued jobs count toward the user limit.
-- `AGENTIC_TIMEOUT_MS=180000`: maximum duration of each gateway request, including connect time. Research uses several such requests.
+- `AGENTIC_TIMEOUT_MS=600000`: Slack client limit of 10 minutes per gateway response, including connect time. Long document generation counts toward this limit, before the local upload/bookmark tool runs. Function continuations and research use several such responses. Restart after changing `.env`; the launcher reads this setting at startup.
+- `STREAMING_CHUNK_TIMEOUT_S=600` in `.env.gateway`: gateway limit for waiting for upstream response headers or the next streamed chunk. This is an idle/progress timeout, not a total generation limit. Increasing it alone does not change the Slack client deadline.
 - `RESEARCH_TIMEOUT_MS=3600000`: whole-run limit. Resume preserves completed sections. `RESEARCH_MAX_CONCURRENT=1` leaves capacity for chat.
 - `AGENTIC_MAX_REQUEST_BYTES=10485760`: JSON frame limit, including base64 images; align with gateway limits.
 - `AGENTIC_MAX_OUTPUT_TOKENS=8192`: completion limit, including provider reasoning where applicable. Incomplete responses are surfaced rather than saved as complete.

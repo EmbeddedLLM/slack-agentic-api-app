@@ -17,7 +17,7 @@ export const saveChannelDocumentTool = {
   parameters: { type: 'object', additionalProperties: false, required: ['title', 'filename', 'content'], properties: {
     title: { type: 'string', minLength: 1, maxLength: 100 },
     filename: { type: 'string', pattern: '^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\\.md$' },
-    content: { type: 'string', minLength: 1, maxLength: 200000, description: 'Complete Markdown document, including a heading and useful context.' },
+    content: { type: 'string', minLength: 1, maxLength: 200000, description: 'Complete Markdown document, including a heading and useful context. Write the document directly in this argument instead of drafting it in a separate chat answer first. After success, return a brief confirmation and the file link; do not repeat the document.' },
   } },
 };
 
