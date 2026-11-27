@@ -31,12 +31,12 @@ export async function startBot(extraEnv = {}) {
     else if (mode === 'slowchat') return;
     else if (mode === 'code') complete('The result is 42.', { output: [{ type: 'code_interpreter_call', status: 'completed', outputs: [{ type: 'logs', logs: '42' }] }, ...response('The result is 42.').output] });
     else if (mode === 'multi') complete('combined answer', { output: [{ ...response('child details').output[0], agent: { agent_name: '/root/helper' } }, { ...response('combined answer').output[0], agent: { agent_name: '/root' }, phase: 'final_answer' }] });
-    else if (['teams', 'teams-failure', 'teams-malformed'].includes(mode)) {
+    else if (['teams', 'teams-failure', 'teams-malformed', 'teams-invites', 'teams-invites-failure'].includes(mode)) {
       if (request.input.some(item => item.type === 'function_call_output')) {
-        if (mode === 'teams-failure') return send({ type: 'error', error: { code: 'provider_error' } });
+        if (mode.endsWith('-failure')) return send({ type: 'error', error: { code: 'provider_error' } });
         complete(mode === 'teams-malformed' ? '{"name":"create_teams_meeting","arguments":{}}' : 'The meeting is ready.');
       } else complete('', { output: [{ type: 'function_call', name: 'create_teams_meeting', call_id: 'teams_call',
-        arguments: JSON.stringify({ subject: 'Design review', starts_at: null, duration_minutes: 30 }) }] });
+        arguments: JSON.stringify({ subject: 'Design review', starts_at: null, duration_minutes: 30, attendees: mode.startsWith('teams-invites') ? ['UALICE', 'bob@example.org'] : [] }) }] });
     }
     else if (['poll', 'poll-malformed', 'document'].includes(mode)) {
       const isPoll = mode.startsWith('poll');
@@ -74,7 +74,7 @@ export async function startBot(extraEnv = {}) {
   const record = m => async (a = {}) => {
     calls.push({ m, a });
     if (m === 'chat.postMessage') return { ok: true, ts: `${++ts}.000100` };
-    if (m === 'users.info') return { user: { id: a.user, real_name: NAMES[a.user] || 'Nora Nobody', tz: 'UTC', ...users[a.user] } };
+    if (m === 'users.info') return { ok: true, user: { id: a.user, real_name: NAMES[a.user] || 'Nora Nobody', tz: 'UTC', ...users[a.user] } };
     if (m === 'conversations.members') return { members };
     if (m === 'conversations.replies' || m === 'conversations.history') return { messages: [] };
     if (m === 'conversations.info') return { channel: { name: 'general', is_channel: true } };

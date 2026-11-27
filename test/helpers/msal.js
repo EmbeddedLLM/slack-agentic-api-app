@@ -2,7 +2,7 @@
 export const tenantId = '11111111-1111-1111-1111-111111111111';
 export const clientId = '22222222-2222-2222-2222-222222222222';
 export const authResult = { accessToken: 'test-microsoft-access-token', tenantId,
-  scopes: ['https://graph.microsoft.com/OnlineMeetings.ReadWrite'],
+  scopes: ['https://graph.microsoft.com/OnlineMeetings.ReadWrite', 'https://graph.microsoft.com/Calendars.ReadWrite'],
   account: { homeAccountId: 'test-organizer', username: 'organizer@example.test' } };
 
 export function fakeMsal(result = authResult) {

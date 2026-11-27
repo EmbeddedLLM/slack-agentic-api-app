@@ -51,7 +51,7 @@ test('invalid tenants, missing scope and personal/wrong tenant auth never enable
   const disabled = new TeamsAuth(teamsConfig({ TEAMS_TENANT_ID: 'common', TEAMS_CLIENT_ID: clientId }));
   assert.equal(disabled.ready(), false);
   await assert.rejects(disabled.login(() => {}), /Directory and Application UUIDs/);
-  for (const result of [{ ...authResult, scopes: ['User.Read'] }, { ...authResult, tenantId: clientId }]) {
+  for (const result of [{ ...authResult, scopes: ['User.Read'] }, { ...authResult, scopes: ['OnlineMeetings.ReadWrite'] }, { ...authResult, scopes: ['Calendars.ReadWrite'] }, { ...authResult, tenantId: clientId }]) {
     const { auth } = fixture(t, result);
     await assert.rejects(auth.login(() => {}), /sign-in did not complete/);
     assert.equal(auth.ready(), false);

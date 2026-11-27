@@ -13,6 +13,7 @@ export function slackTeamsHandler({ job, authorize, scrub = text => text }) {
     catch (error) { return { ok: false, error: error instanceof SyntaxError ? 'Tool arguments must be valid JSON.' : error.message }; }
     signal?.throwIfAborted();
     if (job.cancelled || !(await authorize())) return { ok: false, error: 'Your current permissions do not allow preparing a Teams call.' };
+    if (args.attendees?.length) return { ok: false, error: 'The official Teams Calls command cannot send calendar invitations. Ask the bot admin to enable Microsoft Graph per_user mode for automatic creation and invitations: https://embeddedllm.github.io/slack-agentic-api-app/teams-graph .' };
     // Keep the copyable command on one line and prevent markup/command injection.
     const title = args.subject.replace(/[`\[\]<>]/g, ' ').replace(/\s+/g, ' ').trim();
     if (!title) return { ok: false, error: 'Provide a plain-text meeting title.' };

@@ -6,7 +6,7 @@ A self-hosted Slack assistant built on [Agentic API](https://github.com/vllm-pro
 
 - Slack mentions, DMs, threaded memory, role permissions, job limits and cancellation.
 - [Interactive polls and bookmarked Markdown documents](docs/polls-and-documents.md), using local function tools over the gateway WebSocket.
-- [Microsoft Teams Calls for Slack](docs/teams-meetings.md): a ready-to-send call command in your thread using the official app’s sign-in. Optional direct Graph automation is also available.
+- [Teams meetings and invitations](docs/teams-meetings.md): sign in privately, create a call and invite people by email or Slack @mention. The confirmed join link returns to the request thread. Requires one-time Microsoft app setup.
 - You.com web search through the gateway, with cited results.
 - Optional [official GitHub MCP](docs/mcp.md) for public repository, issue and PR research.
 - Optional [AgentKanban MCP](docs/mcp.md#agentkanban-board) for board columns, issues, assignments and comments.

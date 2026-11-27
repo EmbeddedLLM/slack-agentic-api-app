@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import path from 'node:path';
 import { atomicJSON, readJSON } from './agentic-client.js';
 
-export const teamsScopes = ['https://graph.microsoft.com/OnlineMeetings.ReadWrite'];
+export const teamsScopes = ['https://graph.microsoft.com/OnlineMeetings.ReadWrite', 'https://graph.microsoft.com/Calendars.ReadWrite'];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const signInMessage = 'Teams organizer sign-in is unavailable or expired. An admin must run npm run teams:login on the bot host.';
 
@@ -21,7 +21,7 @@ export function teamsConfig(env = process.env) {
     enabled: /^(true|1|yes|on)$/i.test(env.TEAMS_ENABLED || ''),
     tenantId: (env.TEAMS_TENANT_ID || '').trim().toLowerCase(),
     clientId: (env.TEAMS_CLIENT_ID || '').trim().toLowerCase(),
-    mode: env.TEAMS_ORGANIZER_MODE || 'slack_calls',
+    mode: env.TEAMS_ORGANIZER_MODE || 'per_user',
     dir: path.resolve(env.TEAMS_STATE_DIR || 'data/teams'),
   };
 }
@@ -89,7 +89,8 @@ export class TeamsAuth {
     });
   }
   checkResult(result, accountId) {
-    const granted = result?.scopes?.some(scope => scope.toLowerCase().replace('https://graph.microsoft.com/', '') === 'onlinemeetings.readwrite');
+    const normalizeScope = scope => scope.toLowerCase().replace('https://graph.microsoft.com/', '');
+    const granted = teamsScopes.every(required => result?.scopes?.some(scope => normalizeScope(scope) === normalizeScope(required)));
     if (!result?.accessToken || !result.account?.homeAccountId || result.tenantId?.toLowerCase() !== this.config.tenantId || !granted ||
         (accountId && result.account.homeAccountId !== accountId)) throw new Error(signInMessage);
     return result;
@@ -127,7 +128,7 @@ export class TeamsAuth {
       } catch {
         if (signal?.aborted) throw signal.reason;
         if (deliveryFailed) throw new Error('Could not deliver private Microsoft sign-in instructions. Try again while active in Slack.');
-        throw new Error('Microsoft sign-in did not complete. Check the tenant/client IDs, public client flows, delegated OnlineMeetings.ReadWrite permission, and your organization’s consent/device-code policies, then retry.');
+        throw new Error('Microsoft sign-in did not complete. Check the tenant/client IDs, public client flows, delegated OnlineMeetings.ReadWrite and Calendars.ReadWrite permissions, and your organization’s consent/device-code policies, then retry.');
       } finally { loginSignal.removeEventListener('abort', cancel); }
     });
   }

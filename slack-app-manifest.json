@@ -21,6 +21,7 @@
         "app_mentions:read",
         "chat:write",
         "users:read",
+        "users:read.email",
         "files:read",
         "files:write",
         "channels:history",

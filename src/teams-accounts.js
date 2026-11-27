@@ -3,6 +3,7 @@ import { TeamsAuth, teamsConfig } from './teams-auth.js';
 import { TeamsMeetings, createTeamsMeetingTool, validateMeeting } from './teams-meetings.js';
 import { scopeKey } from './agentic-client.js';
 import { slackTeamsTool, slackTeamsHandler } from './teams-slack.js';
+import { resolveMeetingAttendees } from './teams-attendees.js';
 
 // OAuth belongs to the Slack requester, never to a model-supplied user/organizer.
 export class TeamsAccounts {
@@ -20,6 +21,7 @@ export class TeamsAccounts {
     if (this.config.mode === 'shared') return this.shared.ready();
     try { this.shared.auth.validate(); return this.config.enabled; } catch { return false; }
   }
+  available() { return this.config.mode === 'per_user' ? this.config.enabled : this.ready(); }
   tool() {
     if (this.config.mode === 'slack_calls') return slackTeamsTool;
     if (this.config.mode === 'shared') return createTeamsMeetingTool;
@@ -50,10 +52,13 @@ export class TeamsAccounts {
     if (this.config.mode === 'shared') return this.shared.handler(context);
     const { job, authorize, client, scrub = text => text } = context;
     return async (raw, { signal } = {}) => {
-      try { validateMeeting(JSON.parse(scrub(raw))); }
+      let args;
+      try { args = JSON.parse(scrub(raw)); validateMeeting(args); }
       catch (error) { return { ok: false, error: error instanceof SyntaxError ? 'Tool arguments must be valid JSON.' : error.message }; }
       signal?.throwIfAborted();
-      if (!this.ready() || job.cancelled || !(await authorize())) return { ok: false, error: 'Your current permissions do not allow creating a Teams meeting.' };
+      if (!this.config.enabled || job.cancelled || !(await authorize())) return { ok: false, error: 'Your current permissions do not allow creating a Teams meeting.' };
+      if (!this.ready()) return { ok: false, setup_required: true, error: 'Automatic Teams creation needs a one-time Microsoft app setup by the bot admin: TEAMS_TENANT_ID, TEAMS_CLIENT_ID, public client flows, and delegated OnlineMeetings.ReadWrite plus Calendars.ReadWrite consent. See https://embeddedllm.github.io/slack-agentic-api-app/teams-graph . After setup, each requester signs in privately once; Meow-AI creates the meeting and sends invitations. The linked Teams Calls app cannot supply this authorization.' };
+      let resolvedAttendees;
       const { key, service } = this.account(job);
       if (this.signIns.has(key)) return { ok: false, error: 'You already have a Microsoft sign-in pending for another meeting request. Complete or cancel that request first.' };
       try { await service.auth.token(); }
@@ -62,6 +67,10 @@ export class TeamsAccounts {
         // prompt the same Slack member to connect different Microsoft accounts.
         if (this.signIns.has(key)) return { ok: false, error: 'Complete your pending Microsoft sign-in first.' };
         if (job.teamsSignInAttempted || job.teamsActionsAttempted) return { ok: false, error: 'This request already attempted Microsoft sign-in or meeting creation. Check any confirmed meeting link, then send a new request when ready.' };
+        try { resolvedAttendees = await resolveMeetingAttendees(args.attendees, { ...context, signal }); }
+        catch (error) { if (signal?.aborted) throw signal.reason; return { ok: false, error: error.message }; }
+        // Profile lookups yield: another request may have started sign-in meanwhile.
+        if (this.signIns.has(key) || job.teamsSignInAttempted || job.teamsActionsAttempted) return { ok: false, error: 'A Microsoft sign-in or meeting attempt is already in progress for this requester. Complete that attempt first.' };
         job.teamsSignInAttempted = true;
         job.teamsActionsAttempted = true;
         const controller = new AbortController();
@@ -77,7 +86,7 @@ export class TeamsAccounts {
             // Ephemeral delivery works in channels, group DMs and 1:1 DMs and
             // is excluded from history. Never expose login codes to the model.
             const result = await client.chat.postEphemeral({ channel: job.channel, user: job.user, thread_ts: job.threadTs,
-              text: `To create your Teams meeting, open <${uri}|Microsoft sign-in> and enter code \`${code}\`. Sign in with your own work/school account within five minutes. I’ll then create the meeting and post its link in this thread. Only you can see this message. Don’t share the code.`, parse: 'none' });
+              text: `To create your Teams meeting, open <${uri}|Microsoft sign-in> and enter code \`${code}\`. Sign in with your own work/school account within five minutes. I’ll then create the meeting${resolvedAttendees?.length ? ' and submit the requested calendar invitations' : ''}, and post its link in this thread. Only you can see this message. Don’t share the code.`, parse: 'none' });
             if (result?.ok !== true) throw new Error('Private sign-in message failed.');
           }, { signal: combined });
         } catch {
@@ -86,8 +95,8 @@ export class TeamsAccounts {
         } finally { this.signIns.delete(key); finish(); }
       }
       signal?.throwIfAborted();
-      const result = await service.handler(context)(raw, { signal });
-      if (result.ok) result.delivery = 'Include this exact join URL in the Slack thread. The meeting is organized by the requester’s connected Microsoft account. No calendar invitations were sent.';
+      const result = await service.handler({ ...context, resolvedAttendees })(raw, { signal });
+      if (result.ok) result.delivery = 'Include this exact join URL in the Slack thread. The meeting is organized by the requester’s connected Microsoft account. Report invitations_sent and attendees accurately; an invitation does not confirm attendance or delivery to the recipient’s inbox.';
       return result;
     };
   }

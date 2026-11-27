@@ -475,13 +475,13 @@ async function getChannelLabel(client, channel) {
 }
 
 // Turn Slack's <@U123>, <#C123|name>, <url|label> markup into readable text.
-async function renderSlackText(client, text = '') {
+async function renderSlackText(client, text = '', preserveMentionIds = false) {
   const ids = [...new Set([...text.matchAll(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g)].map((m) => m[1]))];
   const names = Object.fromEntries(
     await Promise.all(ids.map(async (id) => [id, (await getUser(client, id)).name]))
   );
   return text
-    .replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (_, id) => (id === botUserId ? '@assistant' : `@${names[id] || id}`))
+    .replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (_, id) => (id === botUserId ? '@assistant' : `@${names[id] || id}${preserveMentionIds ? ` (${id})` : ''}`))
     .replace(/<#[CG][A-Z0-9]+\|([^>]*)>/g, '#$1')
     .replace(/<#([CG][A-Z0-9]+)>/g, '#$1')
     .replace(/<!(here|channel|everyone)(?:\|[^>]*)?>/g, '@$1')
@@ -2048,9 +2048,9 @@ function capabilities(role, roleName = 'none') {
     caps.push({ icon: '🗳️', title: 'Create Slack polls', text: 'In a channel, create a poll in your thread with voting buttons and live totals. Each person can change their single vote. The creator or an admin can close voting.', examples: ['create a poll: Which day for the demo? Tuesday, Wednesday, or Thursday'] });
     if (role.createFiles) caps.push({ icon: '🔖', title: 'Save channel documents', text: 'Write a Markdown file, upload it in this thread and add its link to this channel’s bookmarks.', examples: ['document the decisions in this thread as decisions.md and bookmark it in this channel'] });
   }
-  if (role.createMeetings && teamsMeetings.ready()) caps.push(teamsMeetings.config.mode === 'slack_calls'
+  if (role.createMeetings && teamsMeetings.available()) caps.push(teamsMeetings.config.mode === 'slack_calls'
     ? { icon: '📅', title: 'Start Teams calls', text: 'Get a ready-to-send command for the official Microsoft Teams Calls app. You send it in the main channel or DM; that app handles sign-in and the join prompt. Future meetings need scheduling in Teams or Outlook.', examples: ['help me start a Teams call for a design review'] }
-    : { icon: '📅', title: 'Create Teams meeting links', text: `Create a Microsoft Teams join link now or for a scheduled time. ${teamsMeetings.config.mode === 'per_user' ? 'Sign in privately with your own Microsoft account when prompted.' : 'Meetings use the shared organizer.'} No calendar invitations are sent.`, examples: ['create a Teams meeting link for a 30-minute design review now'] });
+    : { icon: '📅', title: 'Create Teams meetings', text: `Create a Teams call now or for a scheduled time and invite people by email or Slack @mention. ${teamsMeetings.config.mode === 'per_user' ? 'Sign in privately with your own Microsoft account when prompted.' : 'Meetings use the shared organizer.'} Requires the Microsoft app setup. Requests without invitees create a link only.`, examples: ['create a Teams call now and invite alex@example.com for 30 minutes'] });
   if (role.kanban && cfg.kanbanMcpLabel) caps.push({ icon: '📋', title: 'Work with AgentKanban', text: 'List board columns and issues, create cards, move them, assign members and add comments in the connected project.', examples: ['show the AgentKanban board columns', 'create an issue in Backlog titled Update the setup guide'] });
   if (role.deepResearch) {
     caps.push({
@@ -2304,7 +2304,7 @@ async function handleRequest(event, client, { explicit = true, peer = null } = {
   const channel = event.channel;
   const threadTs = event.thread_ts || event.ts;
   const rawText = (event.text || '').split(`<@${botUserId}>`).join('').trim();
-  const typed = (await renderSlackText(client, rawText)).trim();
+  const typed = (await renderSlackText(client, rawText, true)).trim();
   const multiCmd = explicit ? MULTI_RE.exec(typed) : null;
   const userText = (multiCmd ? multiCmd[1].trim() : typed) || 'Please look at the attached file(s).';
   if (!peer && explicit && /^teams\s+(?:disconnect|logout)$/i.test(typed)) {
@@ -2516,8 +2516,8 @@ async function handleRequest(event, client, { explicit = true, peer = null } = {
                 (name !== 'save_channel_document' || current.role.createFiles);
             } };
           }
-          if (!peer && !followUp && perms.createMeetings && teamsMeetings.ready()) {
-            runOpts.meetings = { client, authorize: async () => {
+          if (!peer && !followUp && perms.createMeetings && teamsMeetings.available()) {
+            runOpts.meetings = { client, requestText: rawText, authorize: async () => {
               const current = await resolveAccess(client, event.user, channel);
               return current.role.use && current.role.createMeetings && JSON.stringify(current.role) === job.permissionSnapshot;
             } };
@@ -2592,7 +2592,7 @@ async function handleRequest(event, client, { explicit = true, peer = null } = {
   } catch (err) {
     if (err instanceof CancelledError) {
       outcome = 'cancelled';
-      await setStatus(client, job, `_Cancelled${job.cancelledBy ? ` by ${job.cancelledBy}` : ''}._${job.teamsMeeting ? `\nA Teams meeting was already created: <${job.teamsMeeting.join_url}|Join meeting>. No invitation was sent.` : ''}`, false);
+      await setStatus(client, job, `_Cancelled${job.cancelledBy ? ` by ${job.cancelledBy}` : ''}._${job.teamsMeeting ? `\n${toMrkdwn(meetingReply('A Teams meeting was already created.', job.teamsMeeting))}` : ''}`, false);
     } else {
       outcome = 'error';
       console.error('[slack-agentic-error]', id, err);
@@ -2600,7 +2600,7 @@ async function handleRequest(event, client, { explicit = true, peer = null } = {
         err instanceof UserFacingError
           ? `:warning: ${err.message}`
           : `:warning: Something went wrong running the agent (ref \`${id}\`). An admin can find details in the bot logs.`;
-      await setStatus(client, job, `${msg}${job.teamsMeeting ? `\nA Teams meeting was already created: <${job.teamsMeeting.join_url}|Join meeting>. No invitation was sent.` : ''}`, false);
+      await setStatus(client, job, `${msg}${job.teamsMeeting ? `\n${toMrkdwn(meetingReply('A Teams meeting was already created.', job.teamsMeeting))}` : ''}`, false);
     }
     await react(client, channel, event.ts, 'eyes', true);
     await react(client, channel, event.ts, 'x');
