@@ -16,7 +16,7 @@ globalThis.fetch = async (url, options) => {
   return Response.json({ id: body.externalId, subject: body.subject, startDateTime: body.startDateTime, endDateTime: body.endDateTime,
     joinWebUrl: `https://teams.microsoft.com/l/meetup-join/${body.externalId}` }, { status: 201 });
 };
-const bot = await startBot({ TEAMS_ENABLED: 'true', TEAMS_STATE_DIR: dir, TEAMS_TENANT_ID: tenantId, TEAMS_CLIENT_ID: clientId });
+const bot = await startBot({ TEAMS_ENABLED: 'true', TEAMS_ORGANIZER_MODE: 'shared', TEAMS_STATE_DIR: dir, TEAMS_TENANT_ID: tenantId, TEAMS_CLIENT_ID: clientId });
 bot.setMode('teams');
 await bot.mention('UMEM', 'create a Teams meeting link now for a 30-minute design review');
 const declared = bot.gateway.requests[0].tools.find(tool => tool.name === 'create_teams_meeting');

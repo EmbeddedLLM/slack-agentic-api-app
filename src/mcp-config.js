@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { githubReadTools, githubMcpTool } from './mcp-tools.js';
+import { githubReadTools, githubMcpTool, kanbanMcpTool } from './mcp-tools.js';
 import { stickerArtTool } from './sticker-art.js';
 
 // Agentic API currently accepts literal HTTP headers in config.toml. Keep
@@ -18,6 +18,13 @@ export function configureMcp(home, env) {
     if (!env.GITHUB_MCP_TOKEN?.trim()) throw new Error('Set a public-only GITHUB_MCP_TOKEN in .env.gateway before enabling GITHUB_MCP_LABEL.');
     servers.push({ label: env.GITHUB_MCP_LABEL, url: 'https://api.githubcopilot.com/mcp/', allowed: githubReadTools,
       headers: { Authorization: `Bearer ${env.GITHUB_MCP_TOKEN.trim()}`, 'X-MCP-Readonly': 'true', 'X-MCP-Tools': githubReadTools.join(',') } });
+  }
+  if (env.VIBE_KANBAN_MCP_LABEL) {
+    const tool = kanbanMcpTool(env.VIBE_KANBAN_MCP_LABEL);
+    const key = env.VIBE_KANBAN_API_KEY?.trim();
+    if (!key || /[\r\n]/.test(key)) throw new Error('Set VIBE_KANBAN_API_KEY in .env.gateway before enabling VIBE_KANBAN_MCP_LABEL.');
+    servers.push({ label: tool.server_label, url: 'https://agentkanban.embeddedllm.com/mcp', allowed: tool.allowed_tools,
+      headers: { Authorization: `Bearer ${key}` } });
   }
   if (!servers.length) return;
   if (new Set(servers.map(server => server.label)).size !== servers.length) throw new Error('Each MCP service needs a distinct label.');

@@ -1,0 +1,28 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { startBot, ok, J, finish } from './harness.mjs';
+
+const bot = await startBot({ VIBE_KANBAN_MCP_LABEL: 'vibe_kanban' });
+await bot.mention('UMEM', 'list the columns in AgentKanban');
+const request = bot.gateway.requests.at(-1);
+const declared = request.tools.find(tool => tool.server_label === 'vibe_kanban');
+ok(declared?.allowed_tools.length === 7 && declared.allowed_tools.includes('create_issue'), 'human member receives the seven verified board tools');
+ok(!declared.headers && !declared.server_url, 'only a trusted gateway label enters the request');
+ok(/shared authenticated board member/.test(request.instructions) && /only when the requester explicitly asks/.test(request.instructions), 'model receives board identity and mutation guidance');
+await bot.mention('UVIEW', 'list the Kanban board');
+ok(!bot.gateway.requests.at(-1).tools.some(tool => tool.server_label === 'vibe_kanban'), 'viewer cannot access the board');
+const policyFile = path.join(bot.dir, 'access.json');
+const policy = JSON.parse(readFileSync(policyFile));
+policy.botPeers = { UPEER: { botId: 'BPEER', role: 'member' } };
+writeFileSync(policyFile, JSON.stringify(policy));
+bot.users.UPEER = { is_bot: true, profile: { bot_id: 'BPEER' } };
+bot.members.push('UPEER');
+await bot.mention('UPEER', 'create a Kanban issue');
+ok(!bot.gateway.requests.at(-1).tools.some(tool => tool.server_label === 'vibe_kanban'), 'bot peers cannot access the shared board credential');
+policy.roles = { member: { kanban: false } };
+writeFileSync(policyFile, JSON.stringify(policy));
+await bot.mention('UMEM', 'list the board');
+ok(!bot.gateway.requests.at(-1).tools.some(tool => tool.server_label === 'vibe_kanban'), 'board permission changes take effect on the next request');
+await bot.mention('UMEM', 'help');
+ok(!J(bot.calls.at(-1)).includes('Work with AgentKanban'), 'help reflects the current board permission');
+finish();

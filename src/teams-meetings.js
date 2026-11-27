@@ -53,7 +53,7 @@ async function responseJSON(response) {
 }
 
 function graphError(status) {
-  if (status === 401) return 'Microsoft rejected the organizer sign-in. An admin must run npm run teams:login again.';
+  if (status === 401) return 'Microsoft rejected the organizer sign-in. Reconnect the Microsoft account and try again.';
   if (status === 403) return 'Microsoft denied meeting creation. Check delegated OnlineMeetings.ReadWrite consent, the organizer’s Teams license, and organization policies.';
   if (status === 429) return 'Microsoft is rate limiting meetings. Wait before trying again; a retry within this request reuses the same meeting.';
   return 'Microsoft did not confirm the meeting. A retry within this Slack request uses the same meeting ID; starting a new Slack request may create another meeting.';
@@ -92,7 +92,7 @@ export class TeamsMeetings {
         try { token = await this.auth.token(); }
         catch { return { ok: false, error: 'Teams organizer sign-in is unavailable or expired. An admin must run npm run teams:login.' }; }
         signal?.throwIfAborted();
-        if (job.cancelled || !(await authorize()) || token.organizer.homeAccountId !== organizer.homeAccountId) return { ok: false, error: 'Meeting creation stopped because access or the organizer changed.' };
+        if (job.cancelled || !this.auth.ready() || !(await authorize()) || token.organizer.homeAccountId !== organizer.homeAccountId) return { ok: false, error: 'Meeting creation stopped because access or the organizer changed.' };
         if (!saved) {
           saved = { body: { ...validateMeeting(args, this.now()), externalId: `slack-agentic-${id}` }, status: 'pending' };
           atomicJSON(file, saved);

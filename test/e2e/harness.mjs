@@ -78,7 +78,7 @@ export async function startBot(extraEnv = {}) {
     if (m === 'conversations.members') return { members };
     if (m === 'conversations.replies' || m === 'conversations.history') return { messages: [] };
     if (m === 'conversations.info') return { channel: { name: 'general', is_channel: true } };
-    if (m === 'auth.test') return { user_id: 'UBOT', bot_id: 'B1', user: 'test-bot' };
+    if (m === 'auth.test') return { user_id: 'UBOT', bot_id: 'B1', team_id: 'TTEST', user: 'test-bot' };
     if (m === 'files.uploadV2') return { ok: true, files: [{ ok: true, files: [{ id: 'FDOC' }] }] };
     if (m === 'files.info') return { ok: true, file: { id: 'FDOC', permalink: 'https://test.slack.com/files/UBOT/FDOC/decisions.md' } };
     if (m === 'bookmarks.add') return { ok: true, bookmark: { id: 'BKDOC' } };

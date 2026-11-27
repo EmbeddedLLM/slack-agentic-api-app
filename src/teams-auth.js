@@ -10,9 +10,9 @@ const signInMessage = 'Teams organizer sign-in is unavailable or expired. An adm
 
 // Bound each MSAL HTTP exchange too, including refresh-token POSTs. OAuth logic,
 // device-code polling, authority validation and token refresh remain in MSAL.
-async function authRequest(url, method, options = {}) {
+async function authRequest(url, method, options = {}, signal) {
   const response = await fetch(url, { method, headers: options.headers, ...(method === 'POST' ? { body: options.body } : {}),
-    redirect: 'error', signal: AbortSignal.timeout(15000) });
+    redirect: 'error', signal: AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])]) });
   return { headers: Object.fromEntries(response.headers), status: response.status, body: await response.json() };
 }
 
@@ -21,6 +21,7 @@ export function teamsConfig(env = process.env) {
     enabled: /^(true|1|yes|on)$/i.test(env.TEAMS_ENABLED || ''),
     tenantId: (env.TEAMS_TENANT_ID || '').trim().toLowerCase(),
     clientId: (env.TEAMS_CLIENT_ID || '').trim().toLowerCase(),
+    mode: env.TEAMS_ORGANIZER_MODE || 'shared',
     dir: path.resolve(env.TEAMS_STATE_DIR || 'data/teams'),
   };
 }
@@ -77,13 +78,13 @@ export class TeamsAuth {
       },
     };
   }
-  client() {
+  client(signal) {
     return this.createClient({
       auth: { clientId: this.config.clientId, authority: `https://login.microsoftonline.com/${this.config.tenantId}` },
       cache: { cachePlugin: this.cachePlugin() },
       system: { loggerOptions: { piiLoggingEnabled: false, loggerCallback: () => {} }, networkClient: {
-        sendGetRequestAsync: (url, options) => authRequest(url, 'GET', options),
-        sendPostRequestAsync: (url, options) => authRequest(url, 'POST', options),
+        sendGetRequestAsync: (url, options) => authRequest(url, 'GET', options, signal),
+        sendPostRequestAsync: (url, options) => authRequest(url, 'POST', options, signal),
       } },
     });
   }
@@ -93,23 +94,41 @@ export class TeamsAuth {
         (accountId && result.account.homeAccountId !== accountId)) throw new Error(signInMessage);
     return result;
   }
-  async login(onCode) {
+  async login(onCode, { signal, timeoutSeconds = 300 } = {}) {
     this.validate();
     return this.locked(async () => {
+      signal?.throwIfAborted();
+      const deliveryAbort = new AbortController();
+      const loginSignal = AbortSignal.any([AbortSignal.timeout(timeoutSeconds * 1000), deliveryAbort.signal, ...(signal ? [signal] : [])]);
+      let notification = Promise.resolve(), deliveryFailed = false;
+      const request = { scopes: teamsScopes, timeout: timeoutSeconds, cancel: false,
+        deviceCodeCallback: response => {
+          notification = Promise.resolve().then(() => {
+            loginSignal.throwIfAborted();
+            const uri = new URL(response.verificationUri);
+            if (uri.protocol !== 'https:' || !['microsoft.com', 'www.microsoft.com', 'login.microsoftonline.com'].includes(uri.hostname) || uri.username || uri.password || uri.port || !/^[A-Z0-9-]{4,32}$/i.test(response.userCode)) throw new Error('Invalid sign-in instructions.');
+            return onCode({ uri: uri.href, code: response.userCode });
+          }).catch(() => { deliveryFailed = true; deliveryAbort.abort(); });
+        } };
+      const cancel = () => { request.cancel = true; };
+      loginSignal.addEventListener('abort', cancel, { once: true });
       mkdirSync(this.config.dir, { recursive: true, mode: 0o700 });
       chmodSync(this.config.dir, 0o700);
       if (!existsSync(this.file('cache.key'))) writeFileSync(this.file('cache.key'), randomBytes(32), { mode: 0o600, flag: 'wx' });
       chmodSync(this.file('cache.key'), 0o600);
       try {
-        const result = this.checkResult(await this.client().acquireTokenByDeviceCode({ scopes: teamsScopes,
-          deviceCodeCallback: response => onCode({ uri: response.verificationUri, code: response.userCode }) }));
+        const result = this.checkResult(await this.client(loginSignal).acquireTokenByDeviceCode(request));
+        await notification;
+        loginSignal.throwIfAborted();
         const organizer = { tenantId: this.config.tenantId, clientId: this.config.clientId, homeAccountId: result.account.homeAccountId,
           username: result.account.username, signedInAt: new Date().toISOString() };
         atomicJSON(this.file('organizer.json'), organizer);
         return organizer;
       } catch {
+        if (signal?.aborted) throw signal.reason;
+        if (deliveryFailed) throw new Error('Could not deliver private Microsoft sign-in instructions. Try again while active in Slack.');
         throw new Error('Microsoft sign-in did not complete. Check the tenant/client IDs, public client flows, delegated OnlineMeetings.ReadWrite permission, and your organization’s consent/device-code policies, then retry.');
-      }
+      } finally { loginSignal.removeEventListener('abort', cancel); }
     });
   }
   async token() {

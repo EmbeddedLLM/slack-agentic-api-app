@@ -17,7 +17,8 @@
       "deepResearch": true,
       "cancelAny": false,
       "slackActions": true,
-      "createMeetings": true
+      "createMeetings": true,
+      "kanban": true
     },
     "admin": {
       "tools": "web_search,code_interpreter",
@@ -27,7 +28,8 @@
       "deepResearch": true,
       "multiAgent": true,
       "slackActions": true,
-      "createMeetings": true
+      "createMeetings": true,
+      "kanban": true
     }
   },
   "users": {

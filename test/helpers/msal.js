@@ -16,6 +16,7 @@ export function fakeMsal(result = authResult) {
     getTokenCache() { return this.cache; }
     async acquireTokenByDeviceCode({ deviceCodeCallback }) {
       deviceCodeCallback({ verificationUri: 'https://microsoft.com/devicelogin', userCode: 'TESTCODE' });
+      if (globalThis.__msalDeviceLogin) await globalThis.__msalDeviceLogin();
       await this.plugin.beforeCacheAccess({ tokenCache: this.cache });
       this.state = { accounts: [result.account], secret: result.accessToken };
       await this.plugin.afterCacheAccess({ tokenCache: this.cache, cacheHasChanged: true });

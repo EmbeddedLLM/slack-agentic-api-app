@@ -67,3 +67,13 @@ test('tampered credentials fail closed without exposing cache contents', async t
   writeFileSync(file, JSON.stringify(saved));
   await assert.rejects(auth.token(), error => /sign-in is unavailable/.test(error.message) && !/secret|corrupted/.test(error.message));
 });
+
+test('failed private delivery or cancellation never pins a newly signed-in account', async t => {
+  const failed = fixture(t);
+  await assert.rejects(failed.auth.login(async () => { throw new Error('Slack private message failed'); }), /private Microsoft sign-in instructions/);
+  assert.equal(failed.auth.ready(), false);
+  const cancelled = fixture(t);
+  const controller = new AbortController();
+  await assert.rejects(cancelled.auth.login(() => controller.abort(new Error('User cancelled')), { signal: controller.signal }), /User cancelled/);
+  assert.equal(cancelled.auth.ready(), false);
+});

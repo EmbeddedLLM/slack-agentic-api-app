@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, statSync, rmSync } from 'node
 import path from 'node:path';
 import os from 'node:os';
 import { configureMcp } from '../src/mcp-config.js';
-import { githubMcpTool, progressFromEvent } from '../src/mcp-tools.js';
+import { githubMcpTool, kanbanMcpTool, kanbanTools, progressFromEvent } from '../src/mcp-tools.js';
 
 test('MCP registration preserves existing gateway settings, rotates secrets privately, and restricts tool declarations', t => {
   const home = mkdtempSync(path.join(os.tmpdir(), 'mcp-config-'));
@@ -38,4 +38,22 @@ test('progress distinguishes document arguments, text output and MCP work withou
   assert.equal(progressFromEvent({ type: 'response.function_call_arguments.delta', item_id: 'call1', delta: 'private draft' }, state), 'Drafting the Markdown document · 13 characters');
   assert.equal(progressFromEvent({ type: 'response.output_text.delta', delta: 'hello' }, state), 'Writing the answer · 5 characters');
   assert.equal(progressFromEvent({ type: 'response.output_item.added', item: { type: 'mcp_call', name: 'sticker_art_status' } }, state), 'Waiting for sticker artwork');
+});
+
+test('AgentKanban registers the verified endpoint and seven tools with a private gateway credential', t => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'kanban-config-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const env = { VIBE_KANBAN_MCP_LABEL: 'vibe_kanban', VIBE_KANBAN_API_KEY: 'test-private-kanban-key' };
+  configureMcp(home, env);
+  const text = readFileSync(path.join(home, 'config.toml'), 'utf8');
+  assert.match(text, /url = "https:\/\/agentkanban.embeddedllm.com\/mcp"/);
+  assert.match(text, /Authorization.*Bearer test-private-kanban-key/);
+  assert.equal(kanbanTools.length, 7);
+  const declaration = kanbanMcpTool('vibe_kanban');
+  assert.deepEqual(declaration.allowed_tools, kanbanTools);
+  assert.ok(!JSON.stringify(declaration).includes('private-kanban-key'));
+  assert.equal(declaration.server_url, undefined);
+  assert.equal(declaration.headers, undefined);
+  assert.throws(() => configureMcp(home, { VIBE_KANBAN_MCP_LABEL: 'vibe_kanban' }), /VIBE_KANBAN_API_KEY/);
+  assert.throws(() => kanbanMcpTool('bad.label'), /MCP_LABEL/);
 });
