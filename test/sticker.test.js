@@ -48,7 +48,7 @@ test('attached raster image becomes a transparent animated sticker with its subj
   const request = { filename: 'photo-sticker.gif', prompt: 'Make this picture bounce', frames: null, source_image: { id: 'image_1', motion: 'bounce', background: 'solid' } };
   const file = await renderSticker(request, { sourceImages: { image_1: png } });
   const decoded = new omggif.GifReader(file.buffer);
-  assert.equal(decoded.numFrames(), 12);
+  assert.equal(decoded.numFrames(), 20);
   assert.ok(file.buffer.length < 256*1024);
   const pixels = Buffer.alloc(256*256*4);
   decoded.decodeAndBlitFrameRGBA(0,pixels);

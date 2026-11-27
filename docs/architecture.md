@@ -45,7 +45,7 @@ Research groups the approved coverage into at most 2, 4 or 6 sections for quick,
 
 Reports and checkpoints contain sensitive conversation data. Only known secret strings are redacted; encoded or previously unknown secrets cannot be guaranteed absent. Raw conversation and tool history may remain in the gateway's own database.
 
-The gateway owns web search, code interpreter and file search. Python runs in fresh Eryx sandboxes with printed text output, without network or artifact exchange. No local shell, file browser or MCP server is exposed. Slack attachments are decoded in the bridge; bounded text is sent as native UTF-8 `input_file` data and images as `input_image` data URLs. Slack file downloads accept only `https://files.slack.com` with no redirects. Upload folders are removed after each job.
+The gateway owns web search, code interpreter, file search, and optional explicitly configured MCP tools. Python runs in fresh Eryx sandboxes with printed text output, without network or artifact exchange. The GitHub integration exposes only selected read tools using a public-only credential. The sticker adapter exposes only fixed-workflow artwork generation and bounded status polling. Neither integration grants a local shell or arbitrary file browser. Slack attachments are decoded in the bridge; bounded text is sent as native UTF-8 `input_file` data and images as `input_image` data URLs. Slack file downloads accept only `https://files.slack.com` with no redirects. Upload folders are removed after each job.
 
 ## Multi-agent and steering
 

@@ -4,8 +4,12 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { AgenticClient, clientSettings, outputText } from '../src/agentic-client.js';
 import { renderSticker, stickerTool } from '../src/sticker.js';
+import { captureStickerArt, stickerArtTool, stickerArtInstructions } from '../src/sticker-art.js';
 
 const args = process.argv.slice(2);
+const useArt = args.includes('--art');
+if (useArt) args.splice(args.indexOf('--art'), 1);
+const artLabel = useArt ? process.env.STICKER_MCP_LABEL || 'sticker_art' : '';
 let imagePath = '';
 const flag = args.indexOf('--image');
 if (flag >= 0) {
@@ -14,7 +18,7 @@ if (flag >= 0) {
 }
 const description = args.join(' ') || 'a happy orange cat doing a little dance';
 const sourceImages = imagePath ? { image_1: readFileSync(imagePath) } : {};
-const content = [{ type: 'input_text', text: `Create one small animated GIF sticker: ${description}. Use create_sticker.${imagePath ? ' Animate the attached image with ID image_1.' : ' Draw 4 to 8 compact SVG frames.'}` }];
+const content = [{ type: 'input_text', text: `Create one small animated GIF sticker: ${description}. Use create_sticker.${imagePath ? ' Animate the attached image with ID image_1.' : useArt ? ' Generate artwork using the MCP server first.' : ' Draw 4 to 8 compact SVG frames.'}` }];
 if (imagePath) {
   const mime = ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' })[path.extname(imagePath).toLowerCase()];
   if (!mime) throw new Error('Use a PNG, JPEG, GIF or WebP image.');
@@ -26,8 +30,12 @@ let count = 0;
 try {
   const result = await client.respond({
     input: [{ type: 'message', role: 'user', content }],
-    instructions: 'Design an expressive, consistent character with a transparent background and a white outer border. Use compact basic SVG shapes. You must invoke create_sticker. Once it succeeds, confirm briefly. If it returns an error, fix the artwork and retry.',
-    tools: [stickerTool], store: false,
+    instructions: (useArt ? stickerArtInstructions : 'Design an expressive, consistent character with a transparent background and a white outer border. Use compact basic SVG shapes.') + ' You must invoke create_sticker. Once it succeeds, confirm in one short sentence. If it returns an error, fix the artwork and retry.',
+    tools: [stickerTool, ...(useArt ? [stickerArtTool(artLabel)] : [])], store: false,
+    onEvent: event => {
+      if (useArt && captureStickerArt(event, artLabel, sourceImages, process.env.STICKER_ART_DIR)) console.log('Trusted MCP artwork received.');
+      if (event.type === 'response.output_item.done' && event.item?.type === 'mcp_call') console.log(`MCP ${event.item.name}: ${event.item.status}`);
+    },
     functionHandlers: { create_sticker: async raw => {
       if (count) return { ok: false, error: 'One sticker is enough for this check.' };
       try {

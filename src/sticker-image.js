@@ -28,16 +28,27 @@ function removeSolidBackground(pixels, width, height) {
 export async function imageFrames(bytes, settings) {
   let decoded;
   try {
-    decoded = await sharp(Buffer.from(bytes), { limitInputPixels: 16_000_000, animated: false }).rotate().resize(settings.motion === 'spin' ? 160 : 180, settings.motion === 'spin' ? 160 : 180, { fit: 'inside' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    decoded = await sharp(Buffer.from(bytes), { limitInputPixels: 16_000_000, animated: false }).rotate().resize(512, 512, { fit: 'inside' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   } catch { throw new Error('Image decoding failed. Use a PNG, JPEG, GIF or WebP below 16 megapixels.'); }
-  const { data, info: { width, height } } = decoded;
+  let { data, info: { width, height } } = decoded;
   if (settings.background === 'solid') removeSolidBackground(data, width, height);
   if (!data.some((value,i) => i%4===3 && value>127)) throw new Error('Background removal erased the image. Use background=keep or a transparent cutout.');
-  const pad=4, w=width+pad*2, h=height+pad*2;
+  // Crop transparent margins before scaling so photos and generated artwork
+  // have a consistent visual size. Work at 2x for a smooth cutout contour.
+  let left=width, right=0, top=height, bottom=0;
+  for(let y=0;y<height;y++) for(let x=0;x<width;x++) if(data[(y*width+x)*4+3]>32) {
+    left=Math.min(left,x); right=Math.max(right,x); top=Math.min(top,y); bottom=Math.max(bottom,y);
+  }
+  const edge=settings.motion==='spin' ? 310 : 368;
+  const cropped=await sharp(data,{raw:{width,height,channels:4}})
+    .extract({left,top,width:right-left+1,height:bottom-top+1})
+    .resize(edge,edge,{fit:'inside'}).raw().toBuffer({resolveWithObject:true});
+  data=cropped.data; width=cropped.info.width; height=cropped.info.height;
+  const pad=8, w=width+pad*2, h=height+pad*2;
   const bordered=Buffer.alloc(w*h*4);
   // White outline around nontransparent pixels, then place the original image.
   for (let y=0;y<height;y++) for (let x=0;x<width;x++) if (data[(y*width+x)*4+3]>127) {
-    for(let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++) if(dx*dx+dy*dy<=9) {
+    for(let dy=-6;dy<=6;dy++) for(let dx=-6;dx<=6;dx++) if(dx*dx+dy*dy<=36) {
       const i=((y+pad+dy)*w+x+pad+dx)*4; bordered.fill(255,i,i+4);
     }
   }
@@ -49,14 +60,14 @@ export async function imageFrames(bytes, settings) {
     bordered[dest+3]=Math.max(bordered[dest+3],data[source+3]);
   }
   const png=await sharp(bordered,{raw:{width:w,height:h,channels:4}}).png().toBuffer();
-  return Array.from({length:12},(_,i)=>{
-    const phase=i*2*Math.PI/12;
-    let angle=0, scale=1, y=0;
-    if(settings.motion==='bounce') y=-14*(1-Math.cos(phase))/2;
+  return Array.from({length:20},(_,i)=>{
+    const phase=i*2*Math.PI/20;
+    let angle=0, scale=1, y=0, stretch=1;
+    if(settings.motion==='bounce') { y=-16*(1-Math.cos(phase))/2; stretch=1-0.035*Math.cos(phase); }
     if(settings.motion==='wiggle') angle=12*Math.sin(phase);
     if(settings.motion==='pulse') scale=1+0.08*Math.sin(phase);
     if(settings.motion==='float') y=8*Math.sin(phase);
-    if(settings.motion==='spin') angle=360*i/12;
-    return {duration_ms:100,svg:`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><g transform="translate(128 ${128+y}) rotate(${angle}) scale(${scale})"><image x="${-w/2}" y="${-h/2}" width="${w}" height="${h}" href="data:image/png;base64,${png.toString('base64')}"/></g></svg>`};
+    if(settings.motion==='spin') angle=360*i/20;
+    return {duration_ms:60,svg:`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><g transform="translate(128 ${128+y}) rotate(${angle}) scale(${scale/stretch} ${scale*stretch})"><image x="${-w/4}" y="${-h/4}" width="${w/2}" height="${h/2}" href="data:image/png;base64,${png.toString('base64')}"/></g></svg>`};
   });
 }

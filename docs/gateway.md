@@ -46,11 +46,15 @@ Two independent settings apply:
 ```dotenv
 # .env — Slack client: total duration of one response
 AGENTIC_TIMEOUT_MS=600000
+# .env — document/bookmark drafting allowance (20 minutes)
+AGENTIC_DOCUMENT_TIMEOUT_MS=1200000
 # .env.gateway — gateway: wait for headers or the next upstream chunk
 STREAMING_CHUNK_TIMEOUT_S=600
 ```
 
-Both values represent 10 minutes, but the units differ. The gateway already defaults to 600 seconds and does not impose a total inference-round deadline while upstream data keeps arriving. A log saying `The gateway request timed out` is the Slack client reaching `AGENTIC_TIMEOUT_MS`. The gateway’s `--llm-ready-timeout-s` controls startup readiness, not inference. Restart the combined launcher after environment edits; Slack authentication stays intact. See the upstream [timeout configuration](https://github.com/vllm-project/agentic-api/blob/main/docs/guides/configuration.md#typed-upstream-timeouts).
+Normal responses allow 10 minutes. Authorized channel requests mentioning bookmarks or saving a document/report use the greater of the normal and document allowances. These limits apply per Responses turn, not to the complete multi-turn workflow or Slack upload. Progress distinguishes Markdown argument drafting from saving and reports received character counts; a slow model can still take minutes to write a long report.
+
+The gateway already defaults to a 600-second upstream idle timeout and does not impose a total inference-round deadline while upstream data keeps arriving. A log saying `The gateway request timed out` is the Slack client reaching its applicable allowance. The gateway’s `--llm-ready-timeout-s` controls startup readiness, not inference. Restart the combined launcher after environment edits; Slack authentication stays intact. See the upstream [timeout configuration](https://github.com/vllm-project/agentic-api/blob/main/docs/guides/configuration.md#typed-upstream-timeouts).
 
 ### Change the model or its port
 

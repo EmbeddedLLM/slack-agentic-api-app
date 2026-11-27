@@ -1,17 +1,18 @@
 import { Worker } from 'node:worker_threads';
 import { SaxesParser } from 'saxes';
+import { cutoutImage } from './sticker-cutout.js';
 
 export const stickerTool = {
   type: 'function', name: 'create_sticker',
-  description: 'Create and attach a small looping GIF sticker, at most 256 KB and 3 seconds. For an uploaded image, set source_image to its provided image ID, choose motion/background, and set frames=null; this preserves the actual image and adds a white outline. Background solid removes edge-connected plain background color, not complex scenes. Without an image, set source_image=null and draw 2–12 consistent SVG frames with visible motion, transparent background, white outer border and expressive shapes. Each SVG must use width="256" height="256" viewBox="0 0 256 256". Allowed: svg,g,path,circle,ellipse,rect,line,polyline,polygon,text,tspan. No scripts, styles, references or external resources. The first frame should be complete and the loop seamless.',
+  description: 'Create and attach a small looping GIF sticker, at most 256 KB and 3 seconds. For an uploaded image or artwork returned by sticker_art_status, set source_image to its provided image ID and frames=null. Background auto isolates the subject using local AI segmentation; keep preserves alpha; solid removes a plain edge-connected background. The app crops, outlines and animates the cutout with smooth motion. Use the artwork MCP tools first when available for text-only sticker requests. Without an image, set source_image=null and draw 2–12 consistent SVG frames with visible motion, transparent background, white outer border and expressive shapes. Each SVG must use width="256" height="256" viewBox="0 0 256 256". Allowed: svg,g,path,circle,ellipse,rect,line,polyline,polygon,text,tspan. No scripts, styles, references or external resources. The first frame should be complete and the loop seamless.',
   strict: true,
   parameters: { type: 'object', additionalProperties: false, required: ['filename', 'prompt', 'source_image', 'frames'], properties: {
     filename: { type: 'string', description: 'Short filename ending in .gif, e.g. dancing-cat.gif.' },
     prompt: { type: 'string', description: 'The short requested sticker description and motion.' },
     source_image: { anyOf: [{ type: 'null' }, { type: 'object', additionalProperties: false, required: ['id', 'motion', 'background'], properties: {
-      id: { type: 'string', description: 'An image ID from this request, such as image_1. Never a URL or path.' },
+      id: { type: 'string', description: 'An image ID supplied in this request: image_1 for an attachment, or art_… returned by sticker_art_status. Never invent an ID, URL or path.' },
       motion: { type: 'string', enum: ['bounce', 'wiggle', 'pulse', 'float', 'spin'] },
-      background: { type: 'string', enum: ['keep', 'solid'], description: 'keep preserves existing alpha; solid removes edge-connected background matching a corner color. Use keep for complex photos.' },
+      background: { type: 'string', enum: ['auto', 'keep', 'solid'], description: 'auto uses local AI segmentation to isolate the subject from photos or generated art; keep preserves existing transparency; solid removes an edge-connected plain background color.' },
     } }] },
     frames: { type: ['array', 'null'], minItems: 2, maxItems: 12, items: { type: 'object', additionalProperties: false, required: ['svg', 'duration_ms'], properties: {
       svg: { type: 'string', description: 'A complete 256x256 SVG frame. Keep the subject consistent between frames.' },
@@ -27,7 +28,7 @@ export function validateSticker(args) {
   if (args.prompt !== undefined && (typeof args.prompt !== 'string' || args.prompt.length > 1000)) throw new Error('Keep the sticker description below 1000 characters.');
   if (args.source_image != null) {
     const source = args.source_image;
-    if (typeof source !== 'object' || Object.keys(source).some(key => !['id', 'motion', 'background'].includes(key)) || !/^image_[1-9][0-9]*$/.test(source.id) || !['bounce', 'wiggle', 'pulse', 'float', 'spin'].includes(source.motion) || !['keep', 'solid'].includes(source.background)) throw new Error('Select an attached image ID, supported motion and background mode.');
+    if (typeof source !== 'object' || Object.keys(source).some(key => !['id', 'motion', 'background'].includes(key)) || !/^(?:image_[1-9][0-9]*|art_[a-f0-9]{32})$/.test(source.id) || !['bounce', 'wiggle', 'pulse', 'float', 'spin'].includes(source.motion) || !['auto', 'keep', 'solid'].includes(source.background)) throw new Error('Select an attached image ID, supported motion and background mode.');
     if (args.frames != null) throw new Error('Use frames=null when animating an attached image.');
     return args;
   }
@@ -62,7 +63,7 @@ export function validateSticker(args) {
 
 export async function renderSticker(args, { signal, sourceImages = {} } = {}) {
   validateSticker(args);
-  const sourceImage = args.source_image ? sourceImages[args.source_image.id] : null;
+  let sourceImage = args.source_image ? sourceImages[args.source_image.id] : null;
   if (args.source_image) {
     if (!Buffer.isBuffer(sourceImage)) throw new Error('That image is not attached to this request. Attach the image again and use its provided ID.');
     if (sourceImage.length > 20 * 1024 * 1024) throw new Error('Use an image smaller than 20 MB.');
@@ -73,6 +74,7 @@ export async function renderSticker(args, { signal, sourceImages = {} } = {}) {
     if (!png && !jpeg && !gif && !webp) throw new Error('Attach a real PNG, JPEG, GIF or WebP image. SVG and external references are not accepted.');
   }
   if (signal?.aborted) throw signal.reason;
+  if (sourceImage && args.source_image.background === 'auto') sourceImage = await cutoutImage(sourceImage, { signal });
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./sticker-worker.js', import.meta.url), { workerData: { ...args, sourceImage }, resourceLimits: { maxOldGenerationSizeMb: 128 }, execArgv: [] });
     let settled = false;
@@ -85,7 +87,7 @@ export async function renderSticker(args, { signal, sourceImages = {} } = {}) {
       if (error) reject(error); else resolve({ filename: args.filename, buffer: Buffer.from(bytes) });
     };
     const abort = () => finish(signal.reason || new Error('Sticker rendering cancelled.'));
-    const timer = setTimeout(() => finish(new Error('Sticker rendering timed out. Simplify the artwork.')), 15000);
+    const timer = setTimeout(() => finish(new Error('Sticker rendering timed out. Simplify the artwork.')), 30000);
     worker.on('message', result => result.error ? finish(new Error(result.error)) : finish(null, result.bytes));
     worker.on('error', () => finish(new Error('The local sticker renderer is unavailable. Check its native dependency installation.')));
     worker.on('exit', () => { if (!settled) finish(new Error('Sticker rendering stopped before completion.')); });

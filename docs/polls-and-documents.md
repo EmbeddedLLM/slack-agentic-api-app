@@ -27,6 +27,10 @@ Each authorized human user has one vote and can change it by selecting another o
 
 The bookmark opens the Slack-hosted file; the Markdown bytes live in the file, not inside the bookmark. No public file link is created. Slack controls who can access the uploaded file. Each new request creates a new document; this tool does not edit or overwrite earlier documents. Review generated summaries before treating them as an authoritative record.
 
+For GitHub-based reports, enable the [official GitHub MCP integration](./mcp) to read issues and current open/draft PRs directly. The model writes the report into the document tool arguments once. Progress shows drafting character counts separately from saving; authorized channel requests mentioning bookmarks or saving a document/report can use `AGENTIC_DOCUMENT_TIMEOUT_MS` (20 minutes by default). More time prevents premature cancellation but does not increase model generation speed.
+
+The document content schema deliberately omits string length constraints because older XGrammar versions can make constrained generation much slower for long bounded strings ([upstream issue](https://github.com/mlc-ai/xgrammar/issues/852)). Nonempty content and the 200 KB/configured byte limit are still enforced locally before any file write or Slack upload.
+
 If the file uploads but bookmarking fails, the result preserves the file link and reports `uploaded:true, bookmarked:false`. For example, Slack may reject bookmarking when the app lacks its scope or the channel has reached the 100-bookmark limit. The assistant must report the partial result rather than claim success. You can bookmark the uploaded file manually after correcting the issue.
 
 ## Permissions and setup

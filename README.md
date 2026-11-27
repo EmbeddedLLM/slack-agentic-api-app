@@ -7,12 +7,13 @@ A self-hosted Slack assistant built on [Agentic API](https://github.com/vllm-pro
 - Slack mentions, DMs, threaded memory, role permissions, job limits and cancellation.
 - [Interactive polls and bookmarked Markdown documents](docs/polls-and-documents.md), using local function tools over the gateway WebSocket.
 - You.com web search through the gateway, with cited results.
+- Optional [official GitHub MCP](docs/mcp.md) for public repository, issue and PR research.
 - `multi <task>` for gateway subagents and multi-agent research.
 - `steer <update>` for an active standard request, with successor tracking.
 - Gateway Python code interpreter for calculations and analysis.
 - Native text/image inputs, optional PDF/Office extraction, and role-scoped file search.
 - Research plans, progress, saved sections, resume, and downloadable reports.
-- Text- or image-plus-prompt GIF stickers, rendered locally as small transparent animations.
+- [GIF stickers](docs/stickers.md) from prompts or images: optional local ComfyUI artwork, AI subject cutouts, white outlines and compact animation.
 - A VitePress documentation website with local search and hosting instructions.
 
 Steering currently supports single-agent chat only. Gateway Python returns text from fresh sandboxes; it cannot exchange files or create downloadable artifacts. Knowledge uploads/indexing use HTTP APIs; inference remains on WebSocket.

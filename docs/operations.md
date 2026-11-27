@@ -31,7 +31,7 @@ The example access policy gives members web search, Python execution, file uploa
 
 This is the value of `roles.member`, not a complete access file. Steering requires no extra flag: members can use `steer <update>` in their own running standard request's thread. Multi-agent and research requests cannot be steered. Members can cancel their own work; `cancelAny` controls cancelling another user's work. Access to the member role still comes from `users` entries or `defaultRole: "member"`.
 
-The local `create_sticker` function is declared automatically when `createFiles` and `STICKERS_ENABLED` are enabled. File search additionally needs configured knowledge-base IDs. MCP servers are not configured by this member profile.
+The local `create_sticker` function is declared automatically when `createFiles` and `STICKERS_ENABLED` are enabled. File search additionally needs configured knowledge-base IDs. Optional MCP labels are configured separately: `GITHUB_MCP_LABEL` enables public GitHub read tools for roles with `web_search`, and `STICKER_MCP_LABEL` enables artwork generation for roles that can create stickers. See [MCP setup](./mcp).
 
 `file_search` requires configured `vectorStoreIds` in the role or `AGENTIC_VECTOR_STORE_IDS`; see [files and knowledge](./files). `AGENTIC_MULTI_AGENT_ENABLED=true` allows `multi` for roles with `multiAgent:true`. `AGENTIC_MAX_CONCURRENT_SUBAGENTS=3` limits simultaneous children, not lifetime agent count or total tokens. `RESEARCH_MULTI_AGENT=true` enables delegation in authorized research. Resume rejects tools, vector stores or multi-agent permissions that have been revoked.
 

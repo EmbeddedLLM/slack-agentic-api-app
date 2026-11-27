@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { configureMcp } from './mcp-config.js';
 
 export function gatewayCommand(root, inherited = process.env) {
   let file = {};
@@ -13,6 +14,7 @@ export function gatewayCommand(root, inherited = process.env) {
   const command = path.join(root, '.runtime/agentic-api/target/release/agentic-server');
   if (!existsSync(command)) throw new Error('Install the source gateway first: npm run gateway:install');
   env.AGENTIC_API_HOME ||= path.join(root, '.runtime/gateway-data');
+  configureMcp(env.AGENTIC_API_HOME, env);
   env.AGENTIC_WEB_SEARCH_PROVIDER ||= 'you';
   env.AGENTIC_CODE_INTERPRETER_ENABLED ||= 'true';
   env.RUST_LOG ||= 'info';
